@@ -14,7 +14,7 @@ import Observation
         do {
             switch item.workflowStep {
             case 0:
-                let result = try await services.identification.identify(photos: item.photos)
+                let result = try await services.identification.identify(photos: item.orderedPhotos)
                 item.identification = result; apply(result.product); item.condition = result.detectedCondition; item.subcategory = result.subcategory; item.color = result.color; item.confidenceScore = result.confidenceScore
             case 1:
                 guard !item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ServiceError.invalid("Enter a product name.") }

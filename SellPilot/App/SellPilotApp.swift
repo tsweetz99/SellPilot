@@ -12,13 +12,16 @@ import SwiftData
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--ui-testing"), let name = ProcessInfo.processInfo.environment["SELLPILOT_TEST_STORE"] {
                 configuration = ModelConfiguration(url: support.appendingPathComponent("test-\(name).store"))
+                PhotoStorage.shared = PhotoStorage(root: support.appendingPathComponent("test-photos-\(name)", isDirectory: true))
             } else { configuration = ModelConfiguration() }
             #else
             configuration = ModelConfiguration()
             #endif
             let container = try ModelContainer(for: StoredSellItem.self, configurations: configuration)
             self.container = container
-            _store = State(initialValue: ItemStore(context: container.mainContext))
+            let store = ItemStore(context: container.mainContext)
+            store.sweepOrphanedPhotos()
+            _store = State(initialValue: store)
         } catch { _startupError = State(initialValue: error.localizedDescription) }
     }
     var body: some Scene { WindowGroup {

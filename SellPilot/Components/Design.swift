@@ -18,10 +18,15 @@ struct PhotoView: View {
     var photo: SellItemPhoto; var height: CGFloat = 180; var original = false
     var body: some View {
         ZStack {
-            if let image = UIImage(data: (!original ? photo.enhancement.previewData : nil) ?? photo.previewData ?? photo.originalData) { Image(uiImage: image).resizable().scaledToFit().padding(original || photo.enhancement.style == .original ? 0 : 12) }
+            if let image = displayImage { Image(uiImage: image).resizable().scaledToFit().padding(original || photo.enhancement.style == .original ? 0 : 12) }
             else { Image(systemName: "photo").font(.largeTitle) }
         }.frame(maxWidth: .infinity).frame(height: height)
             .background(background, in: RoundedRectangle(cornerRadius: 16)).clipped()
+    }
+    /// Downsampled to the displayed size and cached, so lists never decode full-size photos.
+    private var displayImage: UIImage? {
+        if !original, let data = photo.enhancement.previewData, let image = UIImage(data: data) { return image }
+        return PhotoStorage.shared.thumbnail(id: photo.id, maxPixel: Int(height * 3))
     }
     private var background: Color {
         guard !original else { return Color(uiColor: .tertiarySystemFill) }
