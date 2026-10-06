@@ -2,6 +2,7 @@ import XCTest
 import SwiftData
 @testable import SellPilot
 final class SellPilotTests: XCTestCase {
+    override func setUp() { PhotoStorage.shared = PhotoStorage(root: FileManager.default.temporaryDirectory.appendingPathComponent("photos-\(UUID().uuidString)")) }
     @MainActor func testCompleteWorkflowAndRelaunch() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -21,7 +22,7 @@ final class SellPilotTests: XCTestCase {
         let container = try ModelContainer(for: StoredSellItem.self, configurations: ModelConfiguration(url: url))
         let store = ItemStore(context: container.mainContext)
         let workflow = SellingWorkflow(item: SellItem(), store: store, services: AppServices())
-        workflow.item.photos = [SellItemPhoto(originalData: try XCTUnwrap(PhotoImport.normalized(PhotoImport.demoPhoto())))]
+        workflow.item.photos = [try SellItemPhoto(originalData: try XCTUnwrap(PhotoImport.normalized(PhotoImport.demoPhoto())))]
         workflow.item.coverPhotoID = workflow.item.photos[0].id
         await workflow.advance(); XCTAssertEqual(workflow.item.workflowStep, 1); XCTAssertLessThan(workflow.item.confidenceScore, 0.7)
         await workflow.advance(); workflow.item.sellerNotes = "Battery not included. Visible scratch."
@@ -45,7 +46,7 @@ final class SellPilotTests: XCTestCase {
     }
     func testExportOrderAndValidation() async throws {
         var item = SellItem(); item.title = "Chair"; item.askingPrice = 45
-        item.photos = [SellItemPhoto(originalData: Data([1])), SellItemPhoto(originalData: Data([2]))]; item.coverPhotoID = item.photos[1].id
+        item.photos = [try SellItemPhoto(originalData: Data([1])), try SellItemPhoto(originalData: Data([2]))]; item.coverPhotoID = item.photos[1].id
         let service = MockMarketplacePublishingService()
         var draft = try await MockListingGenerationService().generate(item: item, marketplace: .facebook)
         let prepared = try await service.prepareListing(draft, item: item)

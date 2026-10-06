@@ -8,7 +8,7 @@ struct WorkflowView: View {
     private let titles = ["Photograph", "Confirm", "Details", "Market", "Price", "Places", "Photos", "Ready"]
     var body: some View { NavigationStack {
         ScrollView { VStack(alignment: .leading, spacing: 22) {
-            HStack { Text("\(workflow.item.workflowStep + 1) OF 8").font(.caption.bold()).tracking(2); Spacer(); Text("Saved locally · Mock AI").font(.caption).foregroundStyle(.secondary) }
+            HStack { Text("\(workflow.item.workflowStep + 1) OF 8").font(.caption.bold()).tracking(2); Spacer(); Text(workflow.services.usesLiveIdentification ? "Saved locally · AI identification" : "Saved locally · Mock AI").font(.caption).foregroundStyle(.secondary) }
             ProgressView(value: Double(workflow.item.workflowStep + 1), total: 8)
             if workflow.item.status == .sold { PilotCard { Label("Sold for \((workflow.item.soldPrice ?? 0).money)", systemImage: "checkmark.seal.fill").font(.title2.bold()); Text(workflow.item.soldDate?.formatted() ?? "") } }
             else if workflow.item.status == .active { PilotCard { Label("Tracking as Active", systemImage: "tag.fill"); Text("You confirmed this item was published externally.").font(.caption); PrimaryButton(title: "Mark Sold", icon: "checkmark") { soldPrice = String(workflow.item.askingPrice); showSold = true } } }

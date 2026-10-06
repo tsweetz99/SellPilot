@@ -2,12 +2,12 @@ import SwiftUI
 struct HomeView: View {
     @Bindable var store: ItemStore
     @State private var selectedItem: SellItem?
-    private let services = AppServices()
+    @State private var showSettings = false
     var body: some View {
         TabView {
             NavigationStack {
                 ScrollView { VStack(alignment: .leading, spacing: 24) {
-                    HStack { Image(systemName: "paperplane.fill").foregroundStyle(PilotTheme.accent); Text("SELLPILOT").font(.headline).tracking(3); Spacer(); Text("MVP • MOCK AI").font(.caption2.bold()).foregroundStyle(.secondary) }
+                    HStack { Image(systemName: "paperplane.fill").foregroundStyle(PilotTheme.accent); Text("SELLPILOT").font(.headline).tracking(3); Spacer(); Button { showSettings = true } label: { Text(APIKeyStore.load() == nil ? "MVP • MOCK AI" : "MVP • AI ON").font(.caption2.bold()).foregroundStyle(.secondary); Image(systemName: "gearshape").foregroundStyle(.secondary) }.accessibilityLabel("Settings") }
                     VStack(alignment: .leading, spacing: 10) { Text("Less effort.\nMore sold.").font(.system(size: 42, weight: .bold, design: .rounded)); Text("Give your unused things a fresh start.").foregroundStyle(.secondary) }
                     PrimaryButton(title: "Sell Something", icon: "camera.fill") { let item = SellItem(); if store.save(item) { selectedItem = item } }.accessibilityIdentifier("sellSomething")
                     HStack { Image(systemName: "sparkles"); Text("Photograph. Confirm. Price. Publish.") }.font(.subheadline).foregroundStyle(.secondary)
@@ -23,7 +23,8 @@ struct HomeView: View {
                 }.padding(22) }.background(PilotTheme.background).toolbar(.hidden, for: .navigationBar)
             }.tabItem { Label("Home", systemImage: "house.fill") }
             NavigationStack { InventoryView(store: store, onSelect: { selectedItem = $0 }) }.tabItem { Label("My Stuff", systemImage: "square.grid.2x2.fill") }
-        }.sheet(item: $selectedItem) { item in WorkflowView(workflow: SellingWorkflow(item: item, store: store, services: services)) }
+        }.sheet(isPresented: $showSettings) { SettingsView() }
+            .sheet(item: $selectedItem) { item in WorkflowView(workflow: SellingWorkflow(item: item, store: store, services: AppServices.make())) }
             .alert("Storage issue", isPresented: Binding(get: { store.error != nil }, set: { if !$0 { store.error = nil } })) { Button("OK") { store.error = nil } } message: { Text(store.error ?? "") }
     }
     private var drafts: [SellItem] { store.items.filter { $0.status == .draft || $0.status == .ready } }

@@ -1,5 +1,10 @@
 import Foundation
-protocol ProductIdentificationService { func identify(photos: [SellItemPhoto]) async throws -> ProductIdentification }
+protocol ProductIdentificationService {
+    /// Shown to the user when photos leave the device; nil for on-device/demo implementations.
+    var disclosure: String? { get }
+    func identify(photos: [SellItemPhoto]) async throws -> ProductIdentification
+}
+extension ProductIdentificationService { var disclosure: String? { nil } }
 protocol MarketResearchService { func research(item: SellItem) async throws -> [MarketComparable] }
 protocol PricingAnalysisService { func analyze(item: SellItem, comparables: [MarketComparable]) async throws -> PricingRecommendation }
 protocol MarketplaceRecommendationService { func recommend(item: SellItem) async throws -> [MarketplaceRecommendation] }
@@ -27,4 +32,15 @@ struct AppServices {
     var enhancement: any PhotoEnhancementService = MockPhotoEnhancementService()
     var listings: any ListingGenerationService = MockListingGenerationService()
     var publishing: any MarketplacePublishingService = MockMarketplacePublishingService()
+}
+extension AppServices {
+    var usesLiveIdentification: Bool { identification.disclosure != nil }
+    /// Real identification when an API key is configured; otherwise the demo fixture. UI tests always get the fixture.
+    static func make() -> AppServices {
+        var services = AppServices()
+        if !ProcessInfo.processInfo.arguments.contains("--ui-testing"), let key = APIKeyStore.load() {
+            services.identification = ClaudeIdentificationService(configuration: .init(apiKey: key))
+        }
+        return services
+    }
 }

@@ -24,22 +24,34 @@ struct CaptureView: View {
                 Button(role: .destructive) { workflow.item.photos.removeAll { $0.id == photo.id }; if workflow.item.coverPhotoID == photo.id { workflow.item.coverPhotoID = workflow.item.photos.first?.id } } label: { Image(systemName: "trash") }.accessibilityLabel("Delete photo")
             }.buttonStyle(.bordered)
         } }
-        if workflow.item.photos.isEmpty { Button("Try with a labeled demo photo") { add(PhotoImport.demoPhoto()) }.accessibilityIdentifier("demoPhoto"); Text("Mock identification always returns a sample tool; edit it to match your item.").font(.caption).foregroundStyle(.secondary) }
+        if workflow.item.photos.isEmpty { Button("Try with a labeled demo photo") { add(PhotoImport.demoPhoto()) }.accessibilityIdentifier("demoPhoto"); Text(workflow.services.identification.disclosure ?? "Demo mode: identification always returns a sample tool; edit it to match your item.").font(.caption).foregroundStyle(.secondary) }
+        if !workflow.item.photos.isEmpty, let disclosure = workflow.services.identification.disclosure { Text(disclosure).font(.caption).foregroundStyle(.secondary) }
     }.sheet(isPresented: $camera) { CameraPicker(onImage: add) }
         .onChange(of: selections) { _, selected in Task { importing = true; defer { importing = false; selections = [] }; for selection in selected { do { if let data = try await selection.loadTransferable(type: Data.self) { add(data) } else { workflow.error = "One photo could not be imported." } } catch { workflow.error = error.localizedDescription } } } }
     }
-    private func add(_ data: Data) { guard workflow.item.photos.count < 10 else { return }; guard let normalized = PhotoImport.normalized(data) else { workflow.error = "Unsupported image. Choose another photo."; return }; guard workflow.item.photos.reduce(data.count, { $0 + $1.originalData.count }) <= 100_000_000 else { workflow.error = "This item has reached the 100 MB photo limit. Choose smaller photos or remove one."; return }; let photo = SellItemPhoto(originalData: data, previewData: normalized); workflow.item.photos.append(photo); if workflow.item.coverPhotoID == nil { workflow.item.coverPhotoID = photo.id }; workflow.save() }
+    private func add(_ data: Data) {
+        guard workflow.item.photos.count < 10 else { return }
+        guard let normalized = PhotoImport.normalized(data) else { workflow.error = "Unsupported image. Choose another photo."; return }
+        let used = workflow.item.photos.reduce(0) { $0 + $1.originalByteCount }
+        guard used + data.count <= 100_000_000 else { workflow.error = "This item has reached the 100 MB photo limit. Choose smaller photos or remove one."; return }
+        do {
+            let photo = try SellItemPhoto(originalData: data, previewData: normalized)
+            workflow.item.photos.append(photo)
+            if workflow.item.coverPhotoID == nil { workflow.item.coverPhotoID = photo.id }
+            workflow.save()
+        } catch { workflow.error = "Could not save this photo on your device: \(error.localizedDescription)" }
+    }
     private func move(_ index: Int, by offset: Int) { workflow.item.photos.swapAt(index, index + offset) }
 }
 struct IdentificationView: View {
     @Bindable var workflow: SellingWorkflow
-    private let categories = ["Tools", "Furniture", "Electronics", "Sporting goods", "Camping equipment", "Collectibles", "Household items", "Baby gear", "Décor", "Automotive accessories", "Hobby equipment", "Other"]
+    private let categories = SellItem.categories
     var body: some View { VStack(alignment: .leading, spacing: 16) {
         Text("Is this right?").font(.largeTitle.bold())
         if let photo = workflow.item.orderedPhotos.first { PhotoView(photo: photo) }
         PilotCard {
-            Text("Simulated AI confidence: \(Int(workflow.item.confidenceScore * 100))%").font(.headline)
-            Text(workflow.item.confidenceScore < 0.7 ? "Low confidence. Review possible matches and verify every detail." : "This is a demo match, not real image recognition. Verify every detail.").font(.caption).foregroundStyle(.secondary)
+            Text("\(workflow.item.identification?.isSimulated == false ? "AI confidence" : "Simulated AI confidence"): \(Int(workflow.item.confidenceScore * 100))%").font(.headline)
+            Text(workflow.item.confidenceScore < 0.7 ? "Low confidence. Review possible matches and verify every detail." : (workflow.item.identification?.isSimulated == false ? "AI suggestions can be wrong. Verify every detail, especially the model number." : "This is a demo match, not real image recognition. Verify every detail.")).font(.caption).foregroundStyle(.secondary)
             if let identification = workflow.item.identification { Text("Possible model: \(identification.possibleModelNumber ?? "Unknown")").font(.caption); ForEach(identification.recognizedAttributes.keys.sorted(), id: \.self) { key in Text("\(key): \(identification.recognizedAttributes[key] ?? "")").font(.caption) } }
         }
         PilotCard {

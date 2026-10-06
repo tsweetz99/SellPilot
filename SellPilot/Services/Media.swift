@@ -3,7 +3,17 @@ import UIKit
 import Speech
 import AVFoundation
 import Observation
+import ImageIO
 
+enum ImageResizer {
+    /// Downsamples (respecting EXIF orientation) so no side exceeds `maxPixel`, and re-encodes as JPEG.
+    static func jpeg(from data: Data, maxPixel: Int, quality: CGFloat) -> Data? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: maxPixel]
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return UIImage(cgImage: image).jpegData(compressionQuality: quality)
+    }
+}
 enum PhotoImport {
     static func normalized(_ data: Data) -> Data? {
         guard let image = UIImage(data: data) else { return nil }

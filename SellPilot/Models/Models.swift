@@ -9,11 +9,45 @@ enum Marketplace: String, Codable, CaseIterable, Identifiable {
 enum PricingStrategy: String, Codable, CaseIterable { case fast = "Sell Fast", recommended = "Recommended", maximize = "Maximize Return" }
 enum EnhancementStyle: String, Codable, CaseIterable { case original = "Original", clean = "Clean Marketplace", studio = "Studio", lifestyle = "Lifestyle" }
 struct PhotoEnhancement: Codable, Equatable { var style: EnhancementStyle = .original; var simulated = true; var previewData: Data? = nil; var integrityPolicy = "Better photos. Same product. Originals are always preserved." }
+/// Photo metadata only. Image bytes live as files in `PhotoStorage`, so saving an item no longer re-encodes every photo.
 struct SellItemPhoto: Codable, Equatable, Identifiable {
     var id = UUID()
-    var originalData: Data
-    var previewData: Data? = nil
     var enhancement = PhotoEnhancement()
+
+    /// Writes the original (and optional display preview) to disk. Throws if the bytes cannot be stored.
+    init(originalData: Data, previewData: Data? = nil) throws {
+        try PhotoStorage.shared.write(originalData, id: id, kind: .original)
+        if let previewData { try PhotoStorage.shared.write(previewData, id: id, kind: .preview) }
+    }
+
+    /// Original bytes, read from disk on demand. Empty if the file is missing.
+    var originalData: Data { PhotoStorage.shared.read(id: id, kind: .original) ?? Data() }
+    var previewData: Data? { PhotoStorage.shared.read(id: id, kind: .preview) }
+    var originalByteCount: Int { PhotoStorage.shared.byteCount(id: id, kind: .original) }
+    var isAvailable: Bool { PhotoStorage.shared.exists(id: id, kind: .original) }
+
+    private enum CodingKeys: String, CodingKey { case id, enhancement, originalData, previewData }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        enhancement = try container.decodeIfPresent(PhotoEnhancement.self, forKey: .enhancement) ?? PhotoEnhancement()
+        // Items saved before photo files existed carry their bytes inline. Move them to disk; a failed write throws
+        // so the stored payload is never replaced by a version that lost its photos.
+        if let legacyOriginal = try container.decodeIfPresent(Data.self, forKey: .originalData) {
+            try PhotoStorage.shared.write(legacyOriginal, id: id, kind: .original)
+            if let legacyPreview = try container.decodeIfPresent(Data.self, forKey: .previewData) {
+                try PhotoStorage.shared.write(legacyPreview, id: id, kind: .preview)
+            }
+            (decoder.userInfo[.photoMigration] as? PhotoMigrationTracker)?.count += 1
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(enhancement, forKey: .enhancement)
+    }
 }
 struct ProductMatch: Codable, Equatable, Identifiable { var id = UUID(); var title: String; var brand: String; var model: String; var category: String }
 struct ProductIdentification: Codable, Equatable {
@@ -25,6 +59,9 @@ struct ProductIdentification: Codable, Equatable {
     var confidenceScore: Double
     var alternateMatches: [ProductMatch]
     var recognizedAttributes: [String: String]
+    /// nil for the built-in demo fixture; otherwise names the model/provider that produced the result.
+    var provider: String? = nil
+    var isSimulated: Bool { provider == nil }
 }
 enum ComparableStatus: String, Codable { case active = "Active asking", sold = "Sold comparable" }
 struct MarketComparable: Codable, Equatable, Identifiable {
@@ -55,6 +92,7 @@ struct SellItem: Codable, Equatable, Identifiable {
     var pricingStrategy: PricingStrategy = .recommended; var askingPrice = 0.0; var soldPrice: Double?; var soldDate: Date?; var coverPhotoID: UUID?
     var photos: [SellItemPhoto] = []; var identification: ProductIdentification?; var comparables: [MarketComparable] = []; var pricing: PricingRecommendation?; var recommendations: [MarketplaceRecommendation] = []; var listings: [ListingDraft] = []
     var workflowStep = 0
+    static let categories = ["Tools", "Furniture", "Electronics", "Sporting goods", "Camping equipment", "Collectibles", "Household items", "Baby gear", "Décor", "Automotive accessories", "Hobby equipment", "Other"]
     var orderedPhotos: [SellItemPhoto] {
         guard let coverPhotoID, let cover = photos.first(where: { $0.id == coverPhotoID }) else { return photos }
         return [cover] + photos.filter { $0.id != coverPhotoID }
