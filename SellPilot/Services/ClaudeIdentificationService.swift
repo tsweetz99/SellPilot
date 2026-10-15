@@ -1,6 +1,7 @@
 import Foundation
 
-/// Identifies an item from its photos with a Claude vision model, using a forced tool call so the reply is structured JSON.
+/// Identifies an item from its photos with a Claude vision model, asking it to answer through a tool call so the reply is structured JSON.
+/// Forced tool choice ("tool"/"any") is rejected by current models, so the tool is required by instruction and tool_choice is "auto".
 struct ClaudeIdentificationService: ProductIdentificationService {
     struct Configuration {
         var apiKey: String
@@ -26,7 +27,9 @@ struct ClaudeIdentificationService: ProductIdentificationService {
     Use the brand "Unknown" when no brand is visible or recognizable. \
     confidence is your honest probability (0 to 1) that the title, brand and model are correct for this exact item; stay below 0.6 when guessing from shape alone. \
     Describe visible wear, damage and missing parts in condition_notes; never hide defects. \
-    Give up to 3 alternates only when there is real doubt.
+    Give up to 3 alternates only when there is real doubt. \
+    If the photos show more than one item, identify the most prominent one and mention the others in condition_notes. \
+    You must answer by calling the report_identification tool; do not reply with plain text.
     """
 
     private static var toolSchema: [String: Any] {
@@ -82,7 +85,7 @@ struct ClaudeIdentificationService: ProductIdentificationService {
             "max_tokens": 1500,
             "system": Self.systemPrompt,
             "tools": [["name": Self.toolName, "description": "Report the identification of the item in the photos.", "input_schema": Self.toolSchema]],
-            "tool_choice": ["type": "tool", "name": Self.toolName],
+            "tool_choice": ["type": "auto"],
             "messages": [["role": "user", "content": content]],
         ]
         var request = URLRequest(url: configuration.endpoint, timeoutInterval: configuration.timeout)
