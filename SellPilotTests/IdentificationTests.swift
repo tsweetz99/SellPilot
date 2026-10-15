@@ -59,7 +59,7 @@ final class IdentificationTests: XCTestCase {
         let request = try XCTUnwrap(StubProtocol.requests.first)
         XCTAssertEqual(request.value(forHTTPHeaderField: "x-api-key"), "test-key"); XCTAssertEqual(request.value(forHTTPHeaderField: "anthropic-version"), "2023-06-01")
         let body = try XCTUnwrap(JSONSerialization.jsonObject(with: StubProtocol.bodies[0]) as? [String: Any])
-        XCTAssertEqual((body["tool_choice"] as? [String: String])?["name"], "report_identification")
+        XCTAssertEqual((body["tool_choice"] as? [String: String])?["type"], "auto", "forced tool choice is rejected by current models")
         let content = try XCTUnwrap(((body["messages"] as? [[String: Any]])?.first?["content"]) as? [[String: Any]])
         XCTAssertEqual(content.filter { $0["type"] as? String == "image" }.count, 6, "capped at maxPhotos")
     }
