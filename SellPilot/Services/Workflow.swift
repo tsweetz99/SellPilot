@@ -5,6 +5,8 @@ import Observation
     var busy = false
     var error: String?
     var notice: String?
+    /// Set when automatic identification failed, so the capture screen can offer manual entry.
+    var identificationFailed = false
     let services: AppServices
     let store: ItemStore
     init(item: SellItem, store: ItemStore, services: AppServices) { self.item = item; self.store = store; self.services = services }
@@ -14,7 +16,10 @@ import Observation
         do {
             switch item.workflowStep {
             case 0:
-                let result = try await services.identification.identify(photos: item.orderedPhotos)
+                identificationFailed = false
+                let result: ProductIdentification
+                do { result = try await services.identification.identify(photos: item.orderedPhotos) }
+                catch { identificationFailed = true; throw error }
                 item.identification = result; apply(result.product); item.condition = result.detectedCondition; item.subcategory = result.subcategory; item.color = result.color; item.confidenceScore = result.confidenceScore
             case 1:
                 guard !item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ServiceError.invalid("Enter a product name.") }
@@ -37,6 +42,14 @@ import Observation
             }
             item.workflowStep = min(item.workflowStep + 1, 7); save()
         } catch { self.error = error.localizedDescription }
+    }
+    /// Moves past identification without a result so the seller can describe the item themselves.
+    func skipIdentification() {
+        guard item.workflowStep == 0, !item.photos.isEmpty else { return }
+        item.identification = nil; item.confidenceScore = 0
+        if item.title == "Untitled item" { item.title = "" }
+        identificationFailed = false
+        item.workflowStep = 1; save()
     }
     func apply(_ match: ProductMatch) { item.title = match.title; item.brand = match.brand; item.model = match.model; item.category = match.category }
     func enhance(_ photoID: UUID, style: EnhancementStyle) async {
