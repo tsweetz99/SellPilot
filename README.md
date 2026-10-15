@@ -6,7 +6,7 @@ A native SwiftUI selling assistant for casual sellers. iOS 17+, Xcode 15+; valid
 
 Open `SellPilot.xcodeproj`, select the **SellPilot** scheme and an iPhone simulator, and Run. For a physical iPhone, choose your development team in Signing & Capabilities. Camera capture requires an actual camera; the simulator supports Photos import and an explicitly labeled demo photo.
 
-Tap **Sell Something**, add 1–10 photos, analyze, confirm/edit the sample identification, add a typed or dictated note, review the market snapshot, select a price and marketplaces, review simulated photo styles, and generate listings. Edit and export each listing. Confirm you posted the item externally to mark Active. Open it from Home or My Stuff to record its sold price.
+Tap **Sell Something** and follow four steps: add 1–10 photos and analyze; confirm/edit the identification and add a typed or dictated note; pick a price and marketplaces (the top two are preselected, and the market data sits in a collapsible section); then generate listings. Edit and export each listing. Confirm you posted the item externally to mark Active. Open it from Home or My Stuff to record its sold price.
 
 ## Implemented
 
