@@ -34,6 +34,9 @@ def call(method, url, token, body=None, form=None, headers=()):
     if body is not None:
         payload = tempfile.mkstemp(); os.write(payload[0], json.dumps(body).encode()); os.close(payload[0])
         config += ['header = "Content-Type: application/json"', 'header = "Content-Language: en-US"', f'data-binary = "@{payload[1]}"']
+    if body is None and not form and method in ("POST", "PUT"):
+        # eBay's edge rejects body-less POSTs (publish, withdraw) with 411, so send an explicit empty body.
+        config += ['header = "Content-Type: application/json"', 'data = ""']
     if form: config.append(f'form = "{form}"')
     try:
         out = subprocess.run(["curl", "--config", "-"], input="\n".join(config), capture_output=True, text=True)
