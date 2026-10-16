@@ -21,6 +21,16 @@ final class SellPilotUITests: XCTestCase {
         app.terminate(); app.launch(); XCTAssertTrue(app.staticTexts["Sold"].exists); XCTAssertFalse(app.staticTexts["Active"].exists)
         let home = XCTAttachment(screenshot: app.screenshot()); home.name = "Home after sale and relaunch"; home.lifetime = .keepAlways; add(home)
     }
+    func testHomeTilesOpenTheMatchingList() {
+        let app = XCUIApplication(); app.launchArguments = ["--ui-testing"]; app.launchEnvironment["SELLPILOT_TEST_STORE"] = UUID().uuidString; app.launch()
+        let drafts = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "tile-Drafts")).firstMatch
+        XCTAssertTrue(drafts.waitForExistence(timeout: 5)); drafts.tap()
+        XCTAssertTrue(app.staticTexts["No drafts yet"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.segmentedControls.buttons["Drafts"].isSelected)
+        app.tabBars.buttons["Home"].tap()
+        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "tile-Sold")).firstMatch.tap()
+        XCTAssertTrue(app.staticTexts["No sold yet"].waitForExistence(timeout: 5))
+    }
     private func tap(_ name: String, in app: XCUIApplication) {
         let button = app.buttons[name]
         for _ in 0..<30 { if button.exists && button.isHittable { button.tap(); return }; app.swipeUp() }
