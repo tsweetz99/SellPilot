@@ -95,7 +95,8 @@ aspects.setdefault("Brand", "DEWALT")
 # --- 3. business policies opt-in
 step(3, "Opt in to business policies (Account API)")
 status, _, body = call("POST", f"{API}/sell/account/v1/program/opt_in", user, {"programType": "SELLING_POLICY_MANAGEMENT"})
-print(f"   HTTP {status}" + ("" if status in (200, 204) else f"  {errors(body)}"))
+already = any(e.get("errorId") == 25804 for e in body.get("errors", []))   # eBay answers 409/25804 when already opted in
+print(f"   HTTP {status}" + ("  (already opted in, fine)" if already else "" if status in (200, 204) else f"  {errors(body)}"))
 
 # --- 4. policies
 step(4, "Fulfillment, payment and return policies")
@@ -118,10 +119,15 @@ for kind, (listKey, idKey) in kinds.items():
 
 # --- 5. location
 step(5, "Inventory location")
-status, _, body = call("POST", f"{API}/sell/inventory/v1/location/{LOCATION}", user,
-    {"location": {"address": {"city": "San Jose", "stateOrProvince": "CA", "postalCode": "95125", "country": "US"}}, "locationTypes": ["WAREHOUSE"], "name": "SellPilot test location", "merchantLocationStatus": "ENABLED"})
-print(f"   HTTP {status}" + ("  (already exists, fine)" if status == 409 else "" if status in (200, 201, 204) else f"  {errors(body)}"))
-if status not in (200, 201, 204, 409): fail("could not create a location")
+status, _, body = call("GET", f"{API}/sell/inventory/v1/location/{LOCATION}", user)
+if status == 200:
+    print("   HTTP 200  (already exists, fine)")
+else:
+    status, _, body = call("POST", f"{API}/sell/inventory/v1/location/{LOCATION}", user,
+        {"location": {"address": {"city": "San Jose", "stateOrProvince": "CA", "postalCode": "95125", "country": "US"}}, "locationTypes": ["WAREHOUSE"], "name": "SellPilot test location", "merchantLocationStatus": "ENABLED"})
+    exists = any(e.get("errorId") == 25803 for e in body.get("errors", []))   # 400/25803: merchantLocationKey already exists
+    print(f"   HTTP {status}" + ("  (already exists, fine)" if exists else "" if status in (200, 201, 204) else f"  {errors(body)}"))
+    if status not in (200, 201, 204) and not exists: fail("could not create a location")
 
 # --- 6. photo
 step(6, "Upload a photo (Media API)")
