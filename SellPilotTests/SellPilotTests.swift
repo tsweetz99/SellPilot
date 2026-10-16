@@ -62,4 +62,23 @@ final class SellPilotTests: XCTestCase {
         let workflow = SellingWorkflow(item: SellItem(), store: ItemStore(context: container.mainContext), services: AppServices())
         await workflow.advance(); XCTAssertEqual(workflow.item.workflowStep, 0); XCTAssertNotNil(workflow.error)
     }
+    private struct FailingIdentification: ProductIdentificationService {
+        func identify(photos: [SellItemPhoto]) async throws -> ProductIdentification { throw ServiceError.invalid("No internet connection.") }
+    }
+    @MainActor func testFailedIdentificationOffersManualEntryAndRequiresATitle() async throws {
+        let container = try ModelContainer(for: StoredSellItem.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        var services = AppServices(); services.identification = FailingIdentification()
+        let workflow = SellingWorkflow(item: SellItem(), store: ItemStore(context: container.mainContext), services: services)
+        workflow.skipIdentification(); XCTAssertEqual(workflow.item.workflowStep, 0, "skip needs a photo")
+        workflow.item.photos = [try SellItemPhoto(originalData: try XCTUnwrap(PhotoImport.normalized(PhotoImport.demoPhoto())))]
+        await workflow.advance()
+        XCTAssertTrue(workflow.identificationFailed); XCTAssertEqual(workflow.error, "No internet connection."); XCTAssertEqual(workflow.item.workflowStep, 0)
+        workflow.skipIdentification()
+        XCTAssertEqual(workflow.item.workflowStep, 1); XCTAssertFalse(workflow.identificationFailed)
+        XCTAssertNil(workflow.item.identification); XCTAssertEqual(workflow.item.title, "")
+        workflow.error = nil; await workflow.advance()
+        XCTAssertEqual(workflow.item.workflowStep, 1, "blank title is rejected"); XCTAssertNotNil(workflow.error)
+        workflow.error = nil; workflow.item.title = "Oak side table"; await workflow.advance()
+        XCTAssertEqual(workflow.item.workflowStep, 2); XCTAssertNil(workflow.error)
+    }
 }

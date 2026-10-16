@@ -25,6 +25,10 @@ struct CaptureView: View {
             }.buttonStyle(.bordered)
         } }
         if workflow.item.photos.isEmpty { Button("Try with a labeled demo photo") { add(PhotoImport.demoPhoto()) }.accessibilityIdentifier("demoPhoto"); Text(workflow.services.identification.disclosure ?? "Demo mode: identification always returns a sample tool; edit it to match your item.").font(.caption).foregroundStyle(.secondary) }
+        if !workflow.item.photos.isEmpty {
+            if workflow.identificationFailed { Text("We couldn't identify this item automatically. You can try again, or enter the details yourself.").font(.subheadline).foregroundStyle(.red) }
+            Button { workflow.skipIdentification() } label: { Label("Skip — I'll enter the details myself", systemImage: "square.and.pencil").frame(maxWidth: .infinity).padding(12) }.buttonStyle(.bordered).accessibilityIdentifier("skipIdentification")
+        }
         if !workflow.item.photos.isEmpty, let disclosure = workflow.services.identification.disclosure { Text(disclosure).font(.caption).foregroundStyle(.secondary) }
     }.sheet(isPresented: $camera) { CameraPicker(onImage: add) }
         .onChange(of: selections) { _, selected in Task { importing = true; defer { importing = false; selections = [] }; for selection in selected { do { if let data = try await selection.loadTransferable(type: Data.self) { add(data) } else { workflow.error = "One photo could not be imported." } } catch { workflow.error = error.localizedDescription } } } }
@@ -50,8 +54,11 @@ struct IdentificationView: View {
         Text("Is this right?").font(.largeTitle.bold())
         if let photo = workflow.item.orderedPhotos.first { PhotoView(photo: photo) }
         PilotCard {
-            Text("\(workflow.item.identification?.isSimulated == false ? "AI confidence" : "Simulated AI confidence"): \(Int(workflow.item.confidenceScore * 100))%").font(.headline)
-            Text(workflow.item.confidenceScore < 0.7 ? "Low confidence. Review possible matches and verify every detail." : (workflow.item.identification?.isSimulated == false ? "AI suggestions can be wrong. Verify every detail, especially the model number." : "This is a demo match, not real image recognition. Verify every detail.")).font(.caption).foregroundStyle(.secondary)
+            if workflow.item.identification == nil { Text("Enter the details").font(.headline); Text("No automatic identification. Fill in what you know; the title is required.").font(.caption).foregroundStyle(.secondary) }
+            else {
+                Text("\(workflow.item.identification?.isSimulated == false ? "AI confidence" : "Simulated AI confidence"): \(Int(workflow.item.confidenceScore * 100))%").font(.headline)
+                Text(workflow.item.confidenceScore < 0.7 ? "Low confidence. Review possible matches and verify every detail." : (workflow.item.identification?.isSimulated == false ? "AI suggestions can be wrong. Verify every detail, especially the model number." : "This is a demo match, not real image recognition. Verify every detail.")).font(.caption).foregroundStyle(.secondary)
+            }
             if let identification = workflow.item.identification { Text("Possible model: \(identification.possibleModelNumber ?? "Unknown")").font(.caption); ForEach(identification.recognizedAttributes.keys.sorted(), id: \.self) { key in Text("\(key): \(identification.recognizedAttributes[key] ?? "")").font(.caption) } }
         }
         PilotCard {
