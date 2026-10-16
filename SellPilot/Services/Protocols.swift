@@ -35,11 +35,18 @@ struct AppServices {
 }
 extension AppServices {
     var usesLiveIdentification: Bool { identification.disclosure != nil }
+    var usesLivePricing: Bool { !(research is MockMarketResearchService) }
     /// Real identification when an API key is configured; otherwise the demo fixture. UI tests always get the fixture.
     static func make() -> AppServices {
         var services = AppServices()
         if !ProcessInfo.processInfo.arguments.contains("--ui-testing"), let key = APIKeyStore.load() {
             services.identification = ClaudeIdentificationService(configuration: .init(apiKey: key))
+        }
+        if !ProcessInfo.processInfo.arguments.contains("--ui-testing"), let credentials = EbayCredentials.load() {
+            let ebay = EbayBrowseMarketResearchService(configuration: .init(credentials: credentials))
+            if let key = APIKeyStore.load() { services.research = FilteredMarketResearchService(base: ebay, filter: ClaudeComparableFilter(configuration: .init(apiKey: key))) }
+            else { services.research = ebay }
+            services.pricing = AskingPricePricingService()
         }
         return services
     }
