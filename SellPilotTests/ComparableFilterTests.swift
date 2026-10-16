@@ -87,7 +87,7 @@ final class ComparableFilterTests: XCTestCase {
         func research(item: SellItem) async throws -> [MarketComparable] { if fail { throw ServiceError.invalid("No internet connection.") }; return comparables }
     }
 
-    @MainActor func testRefreshUpdatesPricesAndClearsListingsButKeepsDataOnFailure() async throws {
+    @MainActor func testRefreshUpdatesPricesKeepsListingsAndKeepsDataOnFailure() async throws {
         let container = try ModelContainer(for: StoredSellItem.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         var services = AppServices()
         var seed = SellItem(); seed.title = "Chair"; seed.workflowStep = 3; seed.status = .draft
@@ -96,7 +96,8 @@ final class ComparableFilterTests: XCTestCase {
         services.research = SwitchableResearch(comparables: comps([40, 50, 60, 70, 80])); services.pricing = AskingPricePricingService()
         let workflow = SellingWorkflow(item: seed, store: ItemStore(context: container.mainContext), services: services)
         await workflow.refreshMarketPrices()
-        XCTAssertNil(workflow.error); XCTAssertEqual(workflow.item.workflowStep, 2); XCTAssertTrue(workflow.item.listings.isEmpty)
+        XCTAssertNil(workflow.error); XCTAssertEqual(workflow.item.workflowStep, 2)
+        XCTAssertEqual(workflow.item.listings.count, 1, "listings stay until regenerated, so the Ready screen never loses what it is showing")
         XCTAssertEqual(workflow.item.askingPrice, 54); XCTAssertEqual(workflow.item.pricing?.source, "ebay-browse-active"); XCTAssertEqual(workflow.item.status, .draft)
 
         let kept = workflow.item
@@ -108,5 +109,23 @@ final class ComparableFilterTests: XCTestCase {
         var sold = kept; sold.status = .sold
         let third = SellingWorkflow(item: sold, store: ItemStore(context: container.mainContext), services: services)
         await third.refreshMarketPrices(); XCTAssertEqual(third.item.pricing, kept.pricing, "sold items are never repriced")
+    }
+
+    @MainActor func testALiveEbayListingBlocksRepricingAndRegenerating() async throws {
+        let container = try ModelContainer(for: StoredSellItem.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        var services = AppServices(); services.research = SwitchableResearch(comparables: comps([40, 50, 60, 70, 80])); services.pricing = AskingPricePricingService()
+        var seed = SellItem(); seed.title = "Chair"; seed.workflowStep = 3; seed.status = .ready; seed.askingPrice = 5; seed.selectedMarketplaces = [.ebay]
+        seed.photos = [try SellItemPhoto(originalData: Data([1]))]
+        var live = ListingDraft(marketplace: .ebay, title: "t", description: "d", price: 5, condition: .good, category: "c", keywords: [], itemSpecifics: [:], shippingNotes: "", localPickupNotes: "", photoOrder: [seed.photos[0].id])
+        live.ebayOfferID = "O"; live.ebayListingID = "L"; seed.listings = [live]
+        let workflow = SellingWorkflow(item: seed, store: ItemStore(context: container.mainContext), services: services)
+        await workflow.refreshMarketPrices()
+        XCTAssertTrue(try XCTUnwrap(workflow.error).contains("End the eBay listing")); XCTAssertEqual(workflow.item.askingPrice, 5); XCTAssertEqual(workflow.item.workflowStep, 3)
+        workflow.error = nil; workflow.item.workflowStep = 2
+        await workflow.advance()
+        XCTAssertTrue(try XCTUnwrap(workflow.error).contains("live eBay listing")); XCTAssertEqual(workflow.item.listings[0].ebayListingID, "L", "the live listing reference is never replaced")
+        workflow.error = nil; workflow.item.workflowStep = 1
+        await workflow.advance()
+        XCTAssertNotNil(workflow.error); XCTAssertEqual(workflow.item.listings[0].ebayListingID, "L")
     }
 }

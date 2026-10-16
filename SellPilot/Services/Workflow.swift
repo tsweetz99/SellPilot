@@ -26,6 +26,7 @@ import Observation
                 item.identification = result; apply(result.product); item.condition = result.detectedCondition; item.subcategory = result.subcategory; item.color = result.color; item.confidenceScore = result.confidenceScore
             case 1:
                 guard !item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ServiceError.invalid("Enter a product name.") }
+                guard !item.listings.contains(where: { $0.ebayListingID != nil }) else { throw ServiceError.invalid("This item has a live eBay listing. End it before changing the item or its price.") }
                 item.comparables = []; item.pricing = nil; item.listings = []; item.status = .draft
                 // Market data is a convenience: if it fails, the seller can still set their own price.
                 do {
@@ -38,6 +39,7 @@ import Observation
             case 2:
                 guard item.askingPrice > 0, item.askingPrice.isFinite else { throw ServiceError.invalid("Enter a positive asking price.") }
                 guard !item.selectedMarketplaces.isEmpty else { throw ServiceError.invalid("Choose at least one marketplace.") }
+                guard !item.listings.contains(where: { $0.ebayListingID != nil }) else { throw ServiceError.invalid("This item has a live eBay listing. End it before generating new listings.") }
                 item.selectedMarketplace = item.selectedMarketplaces[0]
                 var drafts: [ListingDraft] = []
                 for market in item.selectedMarketplaces { drafts.append(try await services.listings.generate(item: item, marketplace: market)) }
@@ -56,9 +58,12 @@ import Observation
         item.workflowStep = 1; save()
     }
     /// Re-fetches market data and price suggestions for a saved item, keeping the seller's marketplace choices.
-    /// Existing data is kept if the refresh fails. Listings are cleared because they contain the old price.
+    /// Existing data is kept if the refresh fails. The item returns to Price & places; its listings are left as they are
+    /// (they still show the old price) and are regenerated when the seller continues, so the Ready screen never loses
+    /// the listing it is displaying mid-update.
     func refreshMarketPrices() async {
         guard !busy, item.status == .draft || item.status == .ready, item.workflowStep >= 2 else { return }
+        guard !item.listings.contains(where: { $0.ebayListingID != nil }) else { self.error = "End the eBay listing before changing the price, so it isn't left live at the old price."; return }
         busy = true; defer { busy = false }
         do {
             let comparables = try await services.research.research(item: item)
@@ -66,10 +71,11 @@ import Observation
             if item.recommendations.isEmpty { item.recommendations = try await services.marketplaces.recommend(item: item) }
             item.comparables = comparables; item.pricing = pricing
             item.askingPrice = pricing.price(for: item.pricingStrategy)
-            item.listings = []; item.status = .draft; item.workflowStep = 2
+            item.status = .draft; item.workflowStep = 2
             save()
         } catch { self.error = "Couldn't refresh market prices: \(error.localizedDescription) Your saved prices were kept." }
     }
+
     // MARK: eBay publishing
 
     /// Suggests an eBay category and pre-fills its required item specifics from what we know (and Claude, when configured).

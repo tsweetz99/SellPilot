@@ -15,7 +15,7 @@ struct ListingReviewView: View {
         Text("Your Listing Is Ready").font(.largeTitle.bold())
         Text("\(workflow.item.pricingStrategy.rawValue) · Review the facts, photos, and price before posting.").foregroundStyle(.secondary)
         if !workflow.item.listings.isEmpty {
-            Picker("Marketplace listing", selection: Binding(get: { market ?? workflow.item.listings[0].marketplace }, set: { market = $0 })) { ForEach(workflow.item.listings) { draft in Text(draft.marketplace.rawValue).tag(draft.marketplace) } }.pickerStyle(.menu)
+            Picker("Marketplace listing", selection: Binding(get: { market ?? workflow.item.listings.first?.marketplace ?? .ebay }, set: { market = $0 })) { ForEach(workflow.item.listings) { draft in Text(draft.marketplace.rawValue).tag(draft.marketplace) } }.pickerStyle(.menu)
         }
         if let index {
             editor(index)
