@@ -1,33 +1,40 @@
 import Foundation
 import Security
 
-/// Keychain storage for the identification API key. Prototype only: a key on the device can be extracted,
-/// so a shipping build should call your own server, which holds the key and enforces per-user limits.
+/// Keychain storage for third-party API credentials. Prototype only: credentials on the device can be extracted,
+/// so a shipping build should call your own server, which holds them and enforces per-user limits.
 enum APIKeyStore {
-    private static let service = "com.sellpilot.anthropic"
-    private static let account = "api-key"
-
-    private static var query: [String: Any] {
-        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
+    enum Account: String {
+        case anthropic = "api-key", ebayAppID = "ebay-app-id", ebayCertID = "ebay-cert-id"
+        /// Debug builds also read these environment variables (set them in the Xcode scheme).
+        var environmentName: String {
+            switch self { case .anthropic: "SELLPILOT_ANTHROPIC_API_KEY"; case .ebayAppID: "SELLPILOT_EBAY_APP_ID"; case .ebayCertID: "SELLPILOT_EBAY_CERT_ID" }
+        }
     }
 
-    static func load() -> String? {
+    private static let service = "com.sellpilot.anthropic"
+
+    private static func query(_ account: Account) -> [String: Any] {
+        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account.rawValue]
+    }
+
+    static func load(_ account: Account = .anthropic) -> String? {
         #if DEBUG
-        if let key = ProcessInfo.processInfo.environment["SELLPILOT_ANTHROPIC_API_KEY"], !key.isEmpty { return key }
+        if let value = ProcessInfo.processInfo.environment[account.environmentName], !value.isEmpty { return value }
         #endif
-        var request = query; request[kSecReturnData as String] = true; request[kSecMatchLimit as String] = kSecMatchLimitOne
+        var request = query(account); request[kSecReturnData as String] = true; request[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: CFTypeRef?
         guard SecItemCopyMatching(request as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
         return String(data: data, encoding: .utf8)
     }
 
-    static func save(_ key: String) throws {
-        let data = Data(key.trimmingCharacters(in: .whitespacesAndNewlines).utf8)
-        SecItemDelete(query as CFDictionary)
-        var item = query; item[kSecValueData as String] = data; item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+    static func save(_ value: String, _ account: Account = .anthropic) throws {
+        let data = Data(value.trimmingCharacters(in: .whitespacesAndNewlines).utf8)
+        SecItemDelete(query(account) as CFDictionary)
+        var item = query(account); item[kSecValueData as String] = data; item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         let status = SecItemAdd(item as CFDictionary, nil)
-        guard status == errSecSuccess else { throw ServiceError.invalid("Could not save the key to the Keychain (error \(status)).") }
+        guard status == errSecSuccess else { throw ServiceError.invalid("Could not save to the Keychain (error \(status)).") }
     }
 
-    static func delete() { SecItemDelete(query as CFDictionary) }
+    static func delete(_ account: Account = .anthropic) { SecItemDelete(query(account) as CFDictionary) }
 }

@@ -66,12 +66,15 @@ struct ProductIdentification: Codable, Equatable {
 enum ComparableStatus: String, Codable { case active = "Active asking", sold = "Sold comparable" }
 struct MarketComparable: Codable, Equatable, Identifiable {
     var id = UUID(); var title: String; var marketplace: Marketplace; var price: Double; var status: ComparableStatus; var condition: ItemCondition; var date: Date
+    var url: URL? = nil
 }
 struct PricingRecommendation: Codable, Equatable {
     var sellFastPrice: Double; var recommendedPrice: Double; var maximizeReturnPrice: Double
     var soldMedian: Double; var askingMedian: Double; var soldLow: Double; var soldHigh: Double
     var confidence: Double; var rationale: String; var dataSourceSummary: String
     var marketplace: Marketplace?
+    /// nil for the built-in simulated fixtures; otherwise names the data source.
+    var source: String? = nil
     func price(for strategy: PricingStrategy) -> Double {
         switch strategy { case .fast: sellFastPrice; case .recommended: recommendedPrice; case .maximize: maximizeReturnPrice }
     }

@@ -41,6 +41,10 @@ extension AppServices {
         if !ProcessInfo.processInfo.arguments.contains("--ui-testing"), let key = APIKeyStore.load() {
             services.identification = ClaudeIdentificationService(configuration: .init(apiKey: key))
         }
+        if !ProcessInfo.processInfo.arguments.contains("--ui-testing"), let credentials = EbayCredentials.load() {
+            services.research = EbayBrowseMarketResearchService(configuration: .init(credentials: credentials))
+            services.pricing = AskingPricePricingService()
+        }
         return services
     }
 }

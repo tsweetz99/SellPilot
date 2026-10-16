@@ -15,7 +15,7 @@ struct WorkflowView: View {
             Group { switch workflow.item.workflowStep {
             case 0: CaptureView(workflow: workflow)
             case 1: VStack(alignment: .leading, spacing: 28) { IdentificationView(workflow: workflow); NotesView(workflow: workflow) }
-            case 2: VStack(alignment: .leading, spacing: 28) { PricingView(workflow: workflow); MarketplaceView(workflow: workflow); DisclosureGroup("Market data behind this price") { MarketView(item: workflow.item).padding(.top, 8) } }
+            case 2: VStack(alignment: .leading, spacing: 28) { PricingView(workflow: workflow); MarketplaceView(workflow: workflow); if !workflow.item.comparables.isEmpty { DisclosureGroup("Market data behind this price") { MarketView(item: workflow.item).padding(.top, 8) } } }
             default: ListingReviewView(workflow: workflow)
             } }.disabled(workflow.item.status == .sold || workflow.item.status == .archived)
             if workflow.item.workflowStep == SellItem.lastStep && (workflow.item.status == .ready || workflow.item.status == .draft) {

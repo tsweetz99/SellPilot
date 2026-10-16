@@ -24,8 +24,11 @@ import Observation
             case 1:
                 guard !item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ServiceError.invalid("Enter a product name.") }
                 item.comparables = []; item.pricing = nil; item.listings = []; item.status = .draft
-                item.comparables = try await services.research.research(item: item)
-                item.pricing = try await services.pricing.analyze(item: item, comparables: item.comparables)
+                // Market data is a convenience: if it fails, the seller can still set their own price.
+                do {
+                    item.comparables = try await services.research.research(item: item)
+                    item.pricing = try await services.pricing.analyze(item: item, comparables: item.comparables)
+                } catch { item.comparables = []; item.pricing = nil; self.error = "Couldn't get market prices: \(error.localizedDescription) You can enter your own asking price." }
                 item.recommendations = try await services.marketplaces.recommend(item: item)
                 item.askingPrice = item.pricing?.price(for: item.pricingStrategy) ?? 0
                 item.selectedMarketplaces = item.recommendations.sorted { $0.rank < $1.rank }.prefix(2).map(\.marketplace)
