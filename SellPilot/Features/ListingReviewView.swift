@@ -27,9 +27,10 @@ struct ListingReviewView: View {
                 if copied { Text("Copied to clipboard").font(.caption).foregroundStyle(PilotTheme.accent) }
                 PrimaryButton(title: workflow.item.listings[index].marketplace == .facebook ? "Prepare Facebook Listing" : "Export listing package", icon: "square.and.arrow.up") { Task { await export(index, photosOnly: false) } }
                 Button("Share original photos") { Task { await export(index, photosOnly: true) } }.buttonStyle(.bordered)
-                if workflow.item.listings[index].marketplace == .ebay { Button("Publish to eBay (mock)") { Task { await workflow.mockPublish(index) } }.buttonStyle(.bordered) }
+                if workflow.item.listings[index].marketplace == .ebay && workflow.services.ebay == nil { Button("Publish to eBay (mock)") { Task { await workflow.mockPublish(index) } }.buttonStyle(.bordered) }
                 if workflow.item.listings[index].mockPublishReference != nil { Text("Mock publish recorded. No listing was posted.").font(.caption) }
             }
+            if workflow.item.listings[index].marketplace == .ebay && workflow.services.ebay != nil { EbayPublishCard(workflow: workflow, index: index) }
         }
     }.sheet(item: $share) { payload in ShareSheet(items: payload.items) } }
     private func editor(_ index: Int) -> some View { PilotCard {

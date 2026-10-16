@@ -32,6 +32,9 @@ struct AppServices {
     var enhancement: any PhotoEnhancementService = MockPhotoEnhancementService()
     var listings: any ListingGenerationService = MockListingGenerationService()
     var publishing: any MarketplacePublishingService = MockMarketplacePublishingService()
+    /// Real eBay publishing (sandbox for now); nil until sandbox keys and a user token are configured.
+    var ebay: (any EbayListingService)? = nil
+    var specifics: (any ItemSpecificsService)? = nil
 }
 extension AppServices {
     var usesLiveIdentification: Bool { identification.disclosure != nil }
@@ -47,6 +50,11 @@ extension AppServices {
             if let key = APIKeyStore.load() { services.research = FilteredMarketResearchService(base: ebay, filter: ClaudeComparableFilter(configuration: .init(apiKey: key))) }
             else { services.research = ebay }
             services.pricing = AskingPricePricingService()
+        }
+        if !ProcessInfo.processInfo.arguments.contains("--ui-testing"),
+           let app = APIKeyStore.load(.ebaySandboxAppID), let cert = APIKeyStore.load(.ebaySandboxCertID), let token = APIKeyStore.load(.ebaySandboxUserToken) {
+            services.ebay = EbaySellService(configuration: .init(environment: .sandbox, credentials: .init(appID: app, certID: cert), userToken: token))
+            if let key = APIKeyStore.load() { services.specifics = ClaudeSpecificsFiller(configuration: .init(apiKey: key)) }
         }
         return services
     }

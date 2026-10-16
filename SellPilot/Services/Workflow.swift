@@ -7,6 +7,9 @@ import Observation
     var notice: String?
     /// Set when automatic identification failed, so the capture screen can offer manual entry.
     var identificationFailed = false
+    /// eBay category suggestions and the chosen category's item specifics, used by the publish card.
+    var ebayCategoryChoices: [EbayCategory] = []
+    var ebayAspects: [EbayAspect] = []
     let services: AppServices
     let store: ItemStore
     init(item: SellItem, store: ItemStore, services: AppServices) { self.item = item; self.store = store; self.services = services }
@@ -67,6 +70,80 @@ import Observation
             save()
         } catch { self.error = "Couldn't refresh market prices: \(error.localizedDescription) Your saved prices were kept." }
     }
+    // MARK: eBay publishing
+
+    /// Suggests an eBay category and pre-fills its required item specifics from what we know (and Claude, when configured).
+    func prepareEbayListing(_ index: Int) async {
+        guard let ebay = services.ebay, item.listings.indices.contains(index), !busy else { return }
+        busy = true; defer { busy = false }
+        do {
+            let choices = try await ebay.suggestCategories(query: item.title)
+            guard let first = choices.first else { throw ServiceError.invalid("eBay found no category for this item. Try a clearer product name.") }
+            ebayCategoryChoices = choices
+            try await applyEbayCategory(first, index: index, using: ebay)
+        } catch { self.error = error.localizedDescription }
+    }
+
+    func chooseEbayCategory(_ category: EbayCategory, index: Int) async {
+        guard let ebay = services.ebay, item.listings.indices.contains(index), !busy else { return }
+        busy = true; defer { busy = false }
+        do { try await applyEbayCategory(category, index: index, using: ebay) } catch { self.error = error.localizedDescription }
+    }
+
+    /// Reloads the allowed item specifics for a draft whose category was already chosen (after reopening the app).
+    func loadEbayAspects(_ index: Int) async {
+        guard let ebay = services.ebay, item.listings.indices.contains(index), let id = item.listings[index].ebayCategoryID, ebayAspects.isEmpty else { return }
+        ebayAspects = (try? await ebay.aspects(for: id)) ?? []
+    }
+
+    private func applyEbayCategory(_ category: EbayCategory, index: Int, using ebay: any EbayListingService) async throws {
+        let aspects = try await ebay.aspects(for: category.id)
+        var specifics = EbaySpecifics.prefill(item: item, existing: item.listings[index].itemSpecifics, aspects: aspects)
+        let unfilled = aspects.filter { $0.required && !EbaySpecifics.missing([$0], in: specifics).isEmpty }
+        if !unfilled.isEmpty, let filler = services.specifics, let values = try? await filler.fill(item: item, aspects: unfilled) {
+            for (name, value) in values where !EbaySpecifics.missing(unfilled.filter { $0.name == name }, in: specifics).isEmpty { specifics[name] = value }
+        }
+        ebayAspects = aspects
+        item.listings[index].ebayCategoryID = category.id; item.listings[index].ebayCategoryName = category.name
+        item.listings[index].ebayRequiredSpecifics = aspects.filter(\.required).map(\.name)
+        item.listings[index].itemSpecifics = specifics; item.listings[index].category = category.name
+        save()
+    }
+
+    /// Creates the listing on eBay. Real (non-sandbox) listings also mark the item Active; sandbox test listings never do.
+    func publishToEbay(_ index: Int) async {
+        guard let ebay = services.ebay, item.listings.indices.contains(index), !busy else { return }
+        busy = true; defer { busy = false }
+        do {
+            var draft = item.listings[index]
+            guard draft.ebayListingID == nil else { throw ServiceError.invalid("This listing is already on eBay.") }
+            guard let categoryID = draft.ebayCategoryID else { throw ServiceError.invalid("Choose an eBay category first.") }
+            if ebayAspects.isEmpty { ebayAspects = try await ebay.aspects(for: categoryID) }
+            let missing = EbaySpecifics.missing(ebayAspects, in: draft.itemSpecifics)
+            guard missing.isEmpty else { throw ServiceError.invalid("Fill in the required eBay details first: \(missing.joined(separator: ", ")).") }
+            let known = Set(ebayAspects.map { $0.name.lowercased() })
+            draft.itemSpecifics = draft.itemSpecifics.filter { known.contains($0.key.lowercased()) }
+            try services.publishing.validateListing(draft)
+            let prepared = try await services.publishing.prepareListing(draft, item: item)
+            let result = try await ebay.publish(draft: draft, photos: prepared.photos, conditionNotes: item.conditionNotes)
+            item.listings[index].ebayOfferID = result.offerID; item.listings[index].ebayListingID = result.listingID
+            item.listings[index].ebayListingURL = result.url; item.listings[index].ebayEnvironment = ebay.environment.rawValue
+            if ebay.environment == .production { item.status = .active }
+            save()
+            notice = ebay.environment == .sandbox ? "Test listing created in the eBay Sandbox. Nothing was posted to real eBay." : "Your listing is live on eBay."
+        } catch { self.error = error.localizedDescription }
+    }
+
+    func endEbayListing(_ index: Int) async {
+        guard let ebay = services.ebay, item.listings.indices.contains(index), let offerID = item.listings[index].ebayOfferID, !busy else { return }
+        busy = true; defer { busy = false }
+        do {
+            try await ebay.withdraw(offerID: offerID)
+            item.listings[index].ebayListingID = nil; item.listings[index].ebayListingURL = nil
+            save(); notice = "The eBay listing was ended."
+        } catch { self.error = error.localizedDescription }
+    }
+
     func apply(_ match: ProductMatch) { item.title = match.title; item.brand = match.brand; item.model = match.model; item.category = match.category }
     func enhance(_ photoID: UUID, style: EnhancementStyle) async {
         guard let index = item.photos.firstIndex(where: { $0.id == photoID }) else { return }

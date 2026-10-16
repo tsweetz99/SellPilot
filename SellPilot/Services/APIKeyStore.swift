@@ -6,9 +6,11 @@ import Security
 enum APIKeyStore {
     enum Account: String {
         case anthropic = "api-key", ebayAppID = "ebay-app-id", ebayCertID = "ebay-cert-id"
+        case ebaySandboxAppID = "ebay-sandbox-app-id", ebaySandboxCertID = "ebay-sandbox-cert-id", ebaySandboxUserToken = "ebay-sandbox-user-token"
         /// Debug builds also read these environment variables (set them in the Xcode scheme).
         var environmentName: String {
-            switch self { case .anthropic: "SELLPILOT_ANTHROPIC_API_KEY"; case .ebayAppID: "SELLPILOT_EBAY_APP_ID"; case .ebayCertID: "SELLPILOT_EBAY_CERT_ID" }
+            switch self { case .anthropic: "SELLPILOT_ANTHROPIC_API_KEY"; case .ebayAppID: "SELLPILOT_EBAY_APP_ID"; case .ebayCertID: "SELLPILOT_EBAY_CERT_ID"
+            case .ebaySandboxAppID: "SELLPILOT_EBAY_SANDBOX_APP_ID"; case .ebaySandboxCertID: "SELLPILOT_EBAY_SANDBOX_CERT_ID"; case .ebaySandboxUserToken: "SELLPILOT_EBAY_SANDBOX_USER_TOKEN" }
         }
     }
 
