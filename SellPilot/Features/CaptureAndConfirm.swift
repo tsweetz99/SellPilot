@@ -78,7 +78,7 @@ struct NotesView: View {
     @State private var starting = false
     @State private var initialNote = ""
     var body: some View { VStack(alignment: .leading, spacing: 18) {
-        Text("Anything the photos don’t show?").font(.largeTitle.bold())
+        Text("Anything the photos don’t show?").font(.title2.bold())
         Text("Does it work? Any missing accessories, defects, or useful history?").foregroundStyle(.secondary)
         PilotCard { TextEditor(text: $workflow.item.sellerNotes).frame(minHeight: 140).accessibilityLabel("Seller note"); Text("Example: Works well. Battery not included. Small scratch on the handle.").font(.caption).foregroundStyle(.secondary) }
         Button { if dictation.recording { dictation.stop() } else { initialNote = workflow.item.sellerNotes; starting = true; Task { await dictation.start(); starting = false } } } label: { Label(starting ? "Starting…" : dictation.recording ? "Stop dictation" : "Dictate a note", systemImage: dictation.recording ? "stop.circle.fill" : "mic.fill").padding(12) }.buttonStyle(.bordered).disabled(starting)

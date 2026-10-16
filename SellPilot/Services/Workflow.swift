@@ -24,23 +24,21 @@ import Observation
             case 1:
                 guard !item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ServiceError.invalid("Enter a product name.") }
                 item.comparables = []; item.pricing = nil; item.listings = []; item.status = .draft
-            case 2:
                 item.comparables = try await services.research.research(item: item)
                 item.pricing = try await services.pricing.analyze(item: item, comparables: item.comparables)
                 item.recommendations = try await services.marketplaces.recommend(item: item)
                 item.askingPrice = item.pricing?.price(for: item.pricingStrategy) ?? 0
-            case 4:
+                item.selectedMarketplaces = item.recommendations.sorted { $0.rank < $1.rank }.prefix(2).map(\.marketplace)
+            case 2:
                 guard item.askingPrice > 0, item.askingPrice.isFinite else { throw ServiceError.invalid("Enter a positive asking price.") }
-            case 5:
                 guard !item.selectedMarketplaces.isEmpty else { throw ServiceError.invalid("Choose at least one marketplace.") }
                 item.selectedMarketplace = item.selectedMarketplaces[0]
-            case 6:
                 var drafts: [ListingDraft] = []
                 for market in item.selectedMarketplaces { drafts.append(try await services.listings.generate(item: item, marketplace: market)) }
                 item.listings = drafts; item.status = .ready
             default: break
             }
-            item.workflowStep = min(item.workflowStep + 1, 7); save()
+            item.workflowStep = min(item.workflowStep + 1, SellItem.lastStep); save()
         } catch { self.error = error.localizedDescription }
     }
     /// Moves past identification without a result so the seller can describe the item themselves.

@@ -92,6 +92,13 @@ struct SellItem: Codable, Equatable, Identifiable {
     var pricingStrategy: PricingStrategy = .recommended; var askingPrice = 0.0; var soldPrice: Double?; var soldDate: Date?; var coverPhotoID: UUID?
     var photos: [SellItemPhoto] = []; var identification: ProductIdentification?; var comparables: [MarketComparable] = []; var pricing: PricingRecommendation?; var recommendations: [MarketplaceRecommendation] = []; var listings: [ListingDraft] = []
     var workflowStep = 0
+    /// nil on items saved with the original 8-step flow; see `migratedStep`.
+    var flowVersion: Int? = SellItem.currentFlowVersion
+    static let currentFlowVersion = 2
+    /// Steps: 0 Photograph, 1 Confirm (details + notes), 2 Price & places, 3 Ready.
+    static let lastStep = 3
+    /// Maps a step number from the original 8-step flow (photograph, confirm, notes, market, price, places, photos, ready).
+    static func migratedStep(fromV1 step: Int) -> Int { [0, 1, 1, 2, 2, 2, 2, 3][min(max(step, 0), 7)] }
     static let categories = ["Tools", "Furniture", "Electronics", "Sporting goods", "Camping equipment", "Collectibles", "Household items", "Baby gear", "Décor", "Automotive accessories", "Hobby equipment", "Other"]
     var orderedPhotos: [SellItemPhoto] {
         guard let coverPhotoID, let cover = photos.first(where: { $0.id == coverPhotoID }) else { return photos }

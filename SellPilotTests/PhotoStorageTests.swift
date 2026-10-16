@@ -76,4 +76,17 @@ import SwiftData
         }
         XCTAssertTrue(photo.isAvailable)
     }
+
+    func testItemsSavedWithTheOldFlowAreMovedToTheMatchingStep() throws {
+        var item = SellItem(); item.workflowStep = 5   // old "Places" step
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(item)) as? [String: Any])
+        json.removeValue(forKey: "flowVersion")
+        let container = try ModelContainer(for: StoredSellItem.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let row = try StoredSellItem(item: item); row.payload = try JSONSerialization.data(withJSONObject: json)
+        container.mainContext.insert(row); try container.mainContext.save()
+        let store = ItemStore(context: container.mainContext)
+        XCTAssertEqual(store.items[0].workflowStep, 2); XCTAssertEqual(store.items[0].flowVersion, SellItem.currentFlowVersion)
+        let reloaded = ItemStore(context: container.mainContext)
+        XCTAssertEqual(reloaded.items[0].workflowStep, 2, "migration runs once")
+    }
 }

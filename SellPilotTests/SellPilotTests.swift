@@ -25,12 +25,13 @@ final class SellPilotTests: XCTestCase {
         workflow.item.photos = [try SellItemPhoto(originalData: try XCTUnwrap(PhotoImport.normalized(PhotoImport.demoPhoto())))]
         workflow.item.coverPhotoID = workflow.item.photos[0].id
         await workflow.advance(); XCTAssertEqual(workflow.item.workflowStep, 1); XCTAssertLessThan(workflow.item.confidenceScore, 0.7)
-        await workflow.advance(); workflow.item.sellerNotes = "Battery not included. Visible scratch."
-        await workflow.advance(); await workflow.advance(); await workflow.advance(); await workflow.advance()
+        workflow.item.sellerNotes = "Battery not included. Visible scratch."
+        await workflow.advance(); XCTAssertEqual(workflow.item.workflowStep, 2); XCTAssertNotNil(workflow.item.pricing)
+        XCTAssertEqual(workflow.item.selectedMarketplaces.count, 2, "top two recommended marketplaces are preselected")
         let original = workflow.item.photos[0].originalData
         await workflow.enhance(workflow.item.photos[0].id, style: .studio)
         XCTAssertEqual(original, workflow.item.photos[0].originalData)
-        await workflow.advance(); XCTAssertNil(workflow.error); XCTAssertEqual(workflow.item.status, .ready)
+        await workflow.advance(); XCTAssertNil(workflow.error); XCTAssertEqual(workflow.item.workflowStep, SellItem.lastStep); XCTAssertEqual(workflow.item.status, .ready)
         XCTAssertNotEqual(workflow.item.listings[0].description, workflow.item.listings[1].description)
         XCTAssertTrue(workflow.item.listings.allSatisfy { $0.description.contains("Battery not included") })
         await workflow.mockPublish(1); XCTAssertEqual(workflow.item.status, .ready)
@@ -80,5 +81,8 @@ final class SellPilotTests: XCTestCase {
         XCTAssertEqual(workflow.item.workflowStep, 1, "blank title is rejected"); XCTAssertNotNil(workflow.error)
         workflow.error = nil; workflow.item.title = "Oak side table"; await workflow.advance()
         XCTAssertEqual(workflow.item.workflowStep, 2); XCTAssertNil(workflow.error)
+    }
+    func testOldFlowStepsMapToTheShorterFlow() {
+        XCTAssertEqual((0...7).map { SellItem.migratedStep(fromV1: $0) }, [0, 1, 1, 2, 2, 2, 2, 3])
     }
 }

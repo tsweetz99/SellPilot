@@ -21,8 +21,10 @@ import Foundation
                 // Decoding moves any legacy inline photo bytes to files; rewrite the payload without them.
                 let tracker = PhotoMigrationTracker()
                 let decoder = JSONDecoder(); decoder.userInfo[.photoMigration] = tracker
-                let item = try decoder.decode(SellItem.self, from: row.payload)
-                if tracker.count > 0 { row.payload = try JSONEncoder().encode(item) }
+                var item = try decoder.decode(SellItem.self, from: row.payload)
+                var rewrite = tracker.count > 0
+                if item.flowVersion == nil { item.workflowStep = SellItem.migratedStep(fromV1: item.workflowStep); item.flowVersion = SellItem.currentFlowVersion; rewrite = true }
+                if rewrite { row.payload = try JSONEncoder().encode(item) }
                 loaded.append(item)
             }
             if context.hasChanges { try context.save() }

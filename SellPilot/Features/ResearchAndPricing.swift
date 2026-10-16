@@ -3,7 +3,7 @@ struct MarketView: View {
     var item: SellItem
     @State private var filter: ComparableStatus = .sold
     var body: some View { VStack(alignment: .leading, spacing: 18) {
-        Text("Market Snapshot").font(.largeTitle.bold())
+        Text("Market snapshot").font(.title2.bold())
         Text("SIMULATED RESEARCH · No live sales data").font(.caption.bold()).foregroundStyle(PilotTheme.accent)
         if let price = item.pricing { PilotCard {
             HStack { stat("Active asking", "\(item.comparables.filter { $0.status == .active }.count)"); Spacer(); stat("Sold comparables", "\(item.comparables.filter { $0.status == .sold }.count)") }
@@ -35,7 +35,7 @@ struct PricingView: View {
 struct MarketplaceView: View {
     @Bindable var workflow: SellingWorkflow
     var body: some View { VStack(alignment: .leading, spacing: 18) {
-        Text("Best Places to Sell").font(.largeTitle.bold()); Text("Likely fit based on simulated category recommendations. Select one or more.").foregroundStyle(.secondary)
+        Text("Best places to sell").font(.title2.bold()); Text("Likely fit based on simulated category recommendations. Select one or more.").foregroundStyle(.secondary)
         ForEach(workflow.item.recommendations) { recommendation in Button { toggle(recommendation.marketplace) } label: { PilotCard {
             HStack { Text("\(recommendation.rank). \(recommendation.marketplace.rawValue)").font(.headline); Spacer(); Image(systemName: workflow.item.selectedMarketplaces.contains(recommendation.marketplace) ? "checkmark.circle.fill" : "circle") }
             Text(recommendation.rank == 1 ? "Best fit" : recommendation.rank == 2 ? "Good fit" : "Fair fit").font(.caption.bold()).foregroundStyle(PilotTheme.accent)
@@ -45,15 +45,4 @@ struct MarketplaceView: View {
         DisclosureGroup("Choose another marketplace") { ForEach(Marketplace.allCases.filter { market in !workflow.item.recommendations.contains { $0.marketplace == market } }) { market in Toggle(market.rawValue, isOn: Binding(get: { workflow.item.selectedMarketplaces.contains(market) }, set: { _ in toggle(market) })).padding(.vertical, 6) } }
     } }
     private func toggle(_ market: Marketplace) { if workflow.item.selectedMarketplaces.contains(market) { workflow.item.selectedMarketplaces.removeAll { $0 == market } } else { workflow.item.selectedMarketplaces.append(market) } }
-}
-struct EnhancementView: View {
-    @Bindable var workflow: SellingWorkflow
-    var body: some View { VStack(alignment: .leading, spacing: 18) {
-        Text("Better photos.\nSame product.").font(.largeTitle.bold()); Text("Simulated presentation previews only. No clutter removal or generated environments. Product pixels and visible defects stay unchanged; originals are preserved.").foregroundStyle(.secondary)
-        ForEach(workflow.item.orderedPhotos) { photo in PilotCard {
-            HStack { VStack { PhotoView(photo: photo, height: 150, original: true); Text("Original").font(.caption) }; VStack { PhotoView(photo: photo, height: 150); Text("Mock preview").font(.caption) } }
-            Picker("Presentation", selection: Binding(get: { photo.enhancement.style }, set: { style in Task { await workflow.enhance(photo.id, style: style) } })) { ForEach(EnhancementStyle.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
-            Text("Export uses original images. \(photo.enhancement.style == .lifestyle ? "Lifestyle concept: " + (workflow.item.category == "Furniture" ? "living room" : workflow.item.category == "Camping equipment" ? "campsite" : "organized workspace") : photo.enhancement.style.rawValue)").font(.caption).foregroundStyle(.secondary)
-        } }
-    } }
 }
