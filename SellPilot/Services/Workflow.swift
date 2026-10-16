@@ -52,6 +52,21 @@ import Observation
         identificationFailed = false
         item.workflowStep = 1; save()
     }
+    /// Re-fetches market data and price suggestions for a saved item, keeping the seller's marketplace choices.
+    /// Existing data is kept if the refresh fails. Listings are cleared because they contain the old price.
+    func refreshMarketPrices() async {
+        guard !busy, item.status == .draft || item.status == .ready, item.workflowStep >= 2 else { return }
+        busy = true; defer { busy = false }
+        do {
+            let comparables = try await services.research.research(item: item)
+            let pricing = try await services.pricing.analyze(item: item, comparables: comparables)
+            if item.recommendations.isEmpty { item.recommendations = try await services.marketplaces.recommend(item: item) }
+            item.comparables = comparables; item.pricing = pricing
+            item.askingPrice = pricing.price(for: item.pricingStrategy)
+            item.listings = []; item.status = .draft; item.workflowStep = 2
+            save()
+        } catch { self.error = "Couldn't refresh market prices: \(error.localizedDescription) Your saved prices were kept." }
+    }
     func apply(_ match: ProductMatch) { item.title = match.title; item.brand = match.brand; item.model = match.model; item.category = match.category }
     func enhance(_ photoID: UUID, style: EnhancementStyle) async {
         guard let index = item.photos.firstIndex(where: { $0.id == photoID }) else { return }

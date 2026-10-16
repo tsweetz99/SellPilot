@@ -172,13 +172,16 @@ struct AskingPricePricingService: PricingAnalysisService {
         let median = Self.percentile(core, 0.5)
         func rounded(_ value: Double) -> Double { max(1, value.rounded()) }
         let confidence = asking.count < 5 ? 0.3 : asking.count < 15 ? 0.45 : 0.6
+        let verified = comparables.filter { $0.status == .active }.allSatisfy { $0.verifiedMatch == true }
+        let basis = verified ? "\(asking.count) active eBay listings of the same model and configuration (matched by AI)"
+                             : "\(asking.count) active eBay listings (not checked for matching configuration, so they may include kits or accessories)"
         return PricingRecommendation(
             sellFastPrice: rounded(median * 0.80), recommendedPrice: rounded(median * 0.90), maximizeReturnPrice: rounded(median),
             soldMedian: rounded(median * Self.assumedSaleDiscount), askingMedian: median,
             soldLow: rounded(Self.percentile(core, 0.25) * Self.assumedSaleDiscount), soldHigh: rounded(Self.percentile(core, 0.75) * Self.assumedSaleDiscount),
             confidence: confidence,
             rationale: "Suggestions sit 0–20% under the median asking price of similar eBay listings, because items usually sell for less than they are listed for. They are estimates, not observed sales.",
-            dataSourceSummary: "Based on \(asking.count) active eBay listings (median asking \(median.money)). Sale-price estimates assume sales close about 15% below asking; sold prices are not observed.",
+            dataSourceSummary: "Based on \(basis); median asking \(median.money). Sale-price estimates assume sales close about 15% below asking; sold prices are not observed.",
             marketplace: .ebay, source: "ebay-browse-active")
     }
 

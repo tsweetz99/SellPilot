@@ -67,6 +67,8 @@ enum ComparableStatus: String, Codable { case active = "Active asking", sold = "
 struct MarketComparable: Codable, Equatable, Identifiable {
     var id = UUID(); var title: String; var marketplace: Marketplace; var price: Double; var status: ComparableStatus; var condition: ItemCondition; var date: Date
     var url: URL? = nil
+    /// true when an AI check confirmed this listing is the same product and configuration as the seller's item.
+    var verifiedMatch: Bool? = nil
 }
 struct PricingRecommendation: Codable, Equatable {
     var sellFastPrice: Double; var recommendedPrice: Double; var maximizeReturnPrice: Double

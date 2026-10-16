@@ -5,7 +5,7 @@ import Foundation
 struct ClaudeIdentificationService: ProductIdentificationService {
     struct Configuration {
         var apiKey: String
-        var endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
+        var endpoint = ClaudeAPI.defaultEndpoint
         var model = "claude-sonnet-5-5"
         var maxPhotos = 6
         var maxImagePixels = 1280
@@ -62,7 +62,7 @@ struct ClaudeIdentificationService: ProductIdentificationService {
     func identify(photos: [SellItemPhoto]) async throws -> ProductIdentification {
         guard !photos.isEmpty else { throw ServiceError.invalid("Add at least one photo.") }
         let request = try makeRequest(photos: photos)
-        let data = try await send(request)
+        let data = try await ClaudeAPI.send(request, session: session, retryDelay: configuration.retryDelay)
         return try parse(data, photoCount: min(photos.count, configuration.maxPhotos))
     }
 
@@ -88,52 +88,7 @@ struct ClaudeIdentificationService: ProductIdentificationService {
             "tool_choice": ["type": "auto"],
             "messages": [["role": "user", "content": content]],
         ]
-        var request = URLRequest(url: configuration.endpoint, timeoutInterval: configuration.timeout)
-        request.httpMethod = "POST"
-        request.setValue(configuration.apiKey, forHTTPHeaderField: "x-api-key")
-        request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-        request.setValue("application/json", forHTTPHeaderField: "content-type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        return request
-    }
-
-    // MARK: Transport
-
-    private static let retryableStatuses: Set<Int> = [429, 500, 502, 503, 504, 529]
-
-    private func send(_ request: URLRequest) async throws -> Data {
-        for attempt in 0...1 {
-            let data: Data, response: URLResponse
-            do { (data, response) = try await session.data(for: request) }
-            catch let error as URLError {
-                if attempt == 0, [.timedOut, .networkConnectionLost].contains(error.code) { try await Task.sleep(for: configuration.retryDelay); continue }
-                throw ServiceError.invalid(Self.message(for: error))
-            }
-            guard let http = response as? HTTPURLResponse else { throw ServiceError.invalid("Unexpected response from the identification service.") }
-            if (200..<300).contains(http.statusCode) { return data }
-            if attempt == 0, Self.retryableStatuses.contains(http.statusCode) { try await Task.sleep(for: configuration.retryDelay); continue }
-            throw ServiceError.invalid(Self.message(status: http.statusCode, body: data))
-        }
-        throw ServiceError.invalid("The identification service is unavailable. Try again shortly.")
-    }
-
-    private static func message(for error: URLError) -> String {
-        switch error.code {
-        case .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed: "No internet connection. Check your connection and try again."
-        case .timedOut: "Identification took too long. Try again, or use fewer photos."
-        default: "Could not reach the identification service: \(error.localizedDescription)"
-        }
-    }
-
-    private static func message(status: Int, body: Data) -> String {
-        let detail = ((try? JSONSerialization.jsonObject(with: body)) as? [String: Any]).flatMap { ($0["error"] as? [String: Any])?["message"] as? String }
-        switch status {
-        case 401, 403: return "The identification API key was rejected. Check it in Settings."
-        case 413: return "The photos are too large to analyze. Remove a few and try again."
-        case 429: return "Identification is busy right now. Try again in a moment."
-        case 500...599: return "The identification service is temporarily unavailable. Try again shortly."
-        default: return "Identification failed (\(status))" + (detail.map { ": \($0)" } ?? ".")
-        }
+        return try ClaudeAPI.request(endpoint: configuration.endpoint, apiKey: configuration.apiKey, timeout: configuration.timeout, body: body)
     }
 
     // MARK: Response
@@ -151,12 +106,7 @@ struct ClaudeIdentificationService: ProductIdentificationService {
     }
 
     func parse(_ data: Data, photoCount: Int) throws -> ProductIdentification {
-        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let blocks = root["content"] as? [[String: Any]],
-              let tool = blocks.first(where: { $0["type"] as? String == "tool_use" && $0["name"] as? String == Self.toolName }),
-              let input = tool["input"],
-              let inputData = try? JSONSerialization.data(withJSONObject: input),
-              let payload = try? JSONDecoder().decode(Payload.self, from: inputData) else {
+        guard let inputData = ClaudeAPI.toolInput(named: Self.toolName, in: data), let payload = try? JSONDecoder().decode(Payload.self, from: inputData) else {
             throw ServiceError.invalid("The identification result could not be read. Try again.")
         }
         let title = payload.title.trimmingCharacters(in: .whitespacesAndNewlines)

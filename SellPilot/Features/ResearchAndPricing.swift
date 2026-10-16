@@ -24,6 +24,7 @@ struct PricingView: View {
     @Bindable var workflow: SellingWorkflow
     var body: some View { VStack(alignment: .leading, spacing: 18) {
         Text("What should you ask?").font(.largeTitle.bold())
+        if workflow.item.pricing?.source != nil { Text("LIVE EBAY ASKING PRICES · Not sold prices").font(.caption.bold()).foregroundStyle(PilotTheme.accent) }
         Text(workflow.item.pricing == nil ? "No market data is available for this item." : workflow.item.pricing?.source == nil ? "Three ways to approach your sale. These are suggested asking prices from mock data." : "Three ways to approach your sale, based on similar active eBay listings.").foregroundStyle(.secondary)
         if let pricing = workflow.item.pricing {
             ForEach(PricingStrategy.allCases, id: \.self) { strategy in Button { workflow.item.pricingStrategy = strategy; workflow.item.askingPrice = pricing.price(for: strategy) } label: { PilotCard {
@@ -35,6 +36,8 @@ struct PricingView: View {
         } else {
             PilotCard { Text("Your asking price").font(.headline); TextField("Asking price", value: $workflow.item.askingPrice, format: .number).keyboardType(.decimalPad); Text("Check similar listings yourself and enter the price you want.").font(.caption).foregroundStyle(.secondary) }
         }
+        Button { Task { await workflow.refreshMarketPrices() } } label: { Label(workflow.busy ? "Refreshing…" : "Refresh market prices", systemImage: "arrow.clockwise").frame(maxWidth: .infinity).padding(12) }
+            .buttonStyle(.bordered).disabled(workflow.busy).accessibilityIdentifier("refreshPrices")
     } }
     private func explanation(_ strategy: PricingStrategy) -> String { switch strategy { case .fast: "Below recent comparable sales to attract price-sensitive buyers. A faster sale is not guaranteed."; case .recommended: "A balance between comparable sales and active competition."; case .maximize: "More room to negotiate, with potentially more time to find a buyer." } }
 }
