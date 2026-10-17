@@ -15,6 +15,10 @@ struct SettingsView: View {
     @State private var sbxRuName = ""
     @State private var proxyURL = ""
     @State private var connection = EbayConnections.make(.sandbox)
+    @State private var liveRuName = ""
+    @State private var zip = LiveSettings.shipFromZip
+    @State private var liveOn = LiveSettings.enabled
+    @State private var liveConnection = EbayConnections.make(.production)
 
     var body: some View {
         NavigationStack {
@@ -33,9 +37,13 @@ struct SettingsView: View {
                     SecureField("eBay App ID", text: $ebayApp).textInputAutocapitalization(.never).autocorrectionDisabled()
                     SecureField("eBay Cert ID", text: $ebayCert).textInputAutocapitalization(.never).autocorrectionDisabled()
                     Button("Save eBay keys") {
-                        do { try APIKeyStore.save(ebayApp, .ebayAppID); try APIKeyStore.save(ebayCert, .ebayCertID); ebayApp = ""; ebayCert = ""; hasEbay = true; message = "Saved. New items will use live eBay listings for pricing." }
-                        catch { message = error.localizedDescription }
-                    }.disabled(ebayApp.trimmingCharacters(in: .whitespaces).isEmpty || ebayCert.trimmingCharacters(in: .whitespaces).isEmpty)
+                        do {
+                            if !ebayApp.isEmpty { try APIKeyStore.save(ebayApp, .ebayAppID) }
+                            if !ebayCert.isEmpty { try APIKeyStore.save(ebayCert, .ebayCertID) }
+                            ebayApp = ""; ebayCert = ""; hasEbay = EbayCredentials.load() != nil; liveConnection = EbayConnections.make(.production)
+                            message = "Saved. New items will use live eBay listings for pricing."
+                        } catch { message = error.localizedDescription }
+                    }.disabled(ebayApp.trimmingCharacters(in: .whitespaces).isEmpty && ebayCert.trimmingCharacters(in: .whitespaces).isEmpty)
                     if hasEbay { Button("Remove eBay keys", role: .destructive) { APIKeyStore.delete(.ebayAppID); APIKeyStore.delete(.ebayCertID); hasEbay = EbayCredentials.load() != nil; message = "Removed. Pricing uses demo data." } }
                 } header: { Text("eBay market data") } footer: {
                     Text(hasEbay ? "Pricing uses similar active eBay listings. These are asking prices, not sold prices." : "No keys set: pricing uses demo data. Use your eBay Production App ID and Cert ID.")
@@ -72,6 +80,23 @@ struct SettingsView: View {
                 } header: { Text("eBay Sandbox sign-in") } footer: {
                     Text("Sign in with a sandbox test seller instead of pasting a token. SellPilot never sees your eBay password. With a token server, eBay sign-in and app tokens go through it and the Cert ID is not needed on this device. Without one, the Cert ID is used directly from this device, which is fine for testing only.")
                 }
+                Section {
+                    SecureField("Production redirect name (RuName)", text: $liveRuName).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("Ship-from ZIP code", text: $zip).keyboardType(.numberPad)
+                    Button("Save live settings") {
+                        do {
+                            if !liveRuName.isEmpty { try APIKeyStore.save(liveRuName, .ebayRuName) }
+                            guard zip.isEmpty || LiveSettings.isValidZip(zip) else { message = "Enter a 5-digit ZIP code."; return }
+                            LiveSettings.shipFromZip = zip
+                            liveRuName = ""; liveConnection = EbayConnections.make(.production); message = "Saved."
+                        } catch { message = error.localizedDescription }
+                    }.disabled(liveRuName.isEmpty && zip == LiveSettings.shipFromZip)
+                    if let liveConnection { EbayConnectRow(connection: liveConnection) }
+                    Toggle("Publish to real eBay", isOn: Binding(get: { liveOn }, set: { liveOn = $0; LiveSettings.enabled = $0 }))
+                        .disabled(!liveOn && !(LiveSettings.isValidZip(LiveSettings.shipFromZip) && liveConnection?.status == .connected))
+                } header: { Text("Real eBay (live listings)") } footer: {
+                    Text("Off by default. When on, listings you publish go to REAL eBay, where real buyers can purchase them and eBay may charge fees. It needs your Production App ID (in eBay market data above), a Production sign-in, and the ZIP code you ship from. Turn it off to go back to the sandbox.")
+                }
                 if let message { Section { Text(message).font(.footnote) } }
             }
             .navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
@@ -85,13 +110,13 @@ struct EbayConnectRow: View {
     var body: some View {
         switch connection.status {
         case .connected:
-            Label("Connected to eBay Sandbox", systemImage: "checkmark.seal.fill").foregroundStyle(PilotTheme.accent)
+            Label(connection.configuration.environment == .sandbox ? "Connected to eBay Sandbox" : "Connected to eBay", systemImage: "checkmark.seal.fill").foregroundStyle(PilotTheme.accent)
             Button("Disconnect", role: .destructive) { connection.disconnect() }
         case .connecting:
             HStack { ProgressView(); Text("Waiting for eBay…") }
         case .disconnected, .failed:
             if case .failed(let reason) = connection.status { Text(reason).font(.footnote).foregroundStyle(.red) }
-            Button("Connect eBay Sandbox account") { Task { await connection.connect() } }.accessibilityIdentifier("connectEbay")
+            Button(connection.configuration.environment == .sandbox ? "Connect eBay Sandbox account" : "Connect eBay account") { Task { await connection.connect() } }.accessibilityIdentifier(connection.configuration.environment == .sandbox ? "connectEbay" : "connectEbayLive")
         }
     }
 }

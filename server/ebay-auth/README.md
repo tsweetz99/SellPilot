@@ -52,3 +52,11 @@ testing; the bounce page still has to be hosted either way.
 - The function only returns the token fields the app needs, never echoes keys, takes the redirect name from its own settings (not from
   the caller), and answers 4xx/5xx with eBay's error text only.
 - Tests: `npm test` (Node 18+; no dependencies).
+
+## Going live (real eBay)
+
+Real listings use the **Production** keyset. In addition to the Sandbox setup above:
+
+1. eBay developer portal → Application Keys → **Production** → User Tokens: edit the redirect URL entry so its accepted and declined URLs are `https://<your-site>/ebay/callback/`, with OAuth enabled (the same bounce page serves both). Note its **RuName**.
+2. Netlify variables: `EBAY_PRODUCTION_RUNAME` (that RuName). `EBAY_PRODUCTION_APP_ID` and `EBAY_PRODUCTION_CERT_ID` are already there if app tokens are enabled. Redeploy.
+3. In the app, see `Docs/GoingLive.md`.

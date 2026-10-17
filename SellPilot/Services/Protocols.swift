@@ -40,6 +40,8 @@ struct AppServices {
     var specifics: (any ItemSpecificsService)? = nil
     /// eBay is set up enough to connect, but no seller is signed in (and no test token is saved).
     var ebayNeedsSignIn = false
+    /// True when live publishing is switched on, so screens name the real eBay instead of the sandbox.
+    var ebayIsLive = false
     var ebaySetup: EbayPublishingSetup { ebay != nil ? .ready : (ebayNeedsSignIn ? .needsSignIn : .notConfigured) }
 }
 extension AppServices {
@@ -65,17 +67,27 @@ extension AppServices {
             services.research = FilteredMarketResearchService(base: ebay, filter: TitleComparableFilter())
             services.pricing = AskingPricePricingService()
         }
+        let live = LiveSettings.enabled
+        services.ebayIsLive = live
+        let environment: EbaySellEnvironment = live ? .production : .sandbox
         let sandboxCredentials = APIKeyStore.load(.ebaySandboxAppID).flatMap { app in APIKeyStore.load(.ebaySandboxCertID).map { EbayCredentials(appID: app, certID: $0) } }
-        if !testing, let tokens = appTokens(.sandbox, direct: sandboxCredentials) {
-            // A signed-in eBay connection wins; a pasted token is the fallback for testing.
+        let credentials = live ? EbayCredentials.load() : sandboxCredentials
+        if !testing, let tokens = appTokens(environment, direct: credentials) {
+            // A signed-in eBay connection wins. A pasted token is a testing shortcut for the sandbox only, never for real listings.
             let seller: (any EbayUserTokenSource)? = {
-                if let connection = EbayConnections.make(.sandbox), connection.isConnected { return connection }
-                return APIKeyStore.load(.ebaySandboxUserToken).map { StaticEbayTokenSource(token: $0) }
+                if let connection = EbayConnections.make(environment), connection.isConnected { return connection }
+                return live ? nil : APIKeyStore.load(.ebaySandboxUserToken).map { StaticEbayTokenSource(token: $0) }
             }()
             if let seller {
-                services.ebay = EbaySellService(configuration: .init(environment: .sandbox, credentials: sandboxCredentials, tokens: seller), appTokens: tokens)
+                var configuration = EbaySellConfiguration(environment: environment, credentials: credentials, tokens: seller)
+                if live {
+                    configuration.allowLivePublishing = true
+                    configuration.locationPostalCode = LiveSettings.shipFromZip
+                    configuration.locationKey = "SELLPILOT_\(LiveSettings.shipFromZip)"
+                }
+                services.ebay = EbaySellService(configuration: configuration, appTokens: tokens)
                 if let key = APIKeyStore.load() { services.specifics = ClaudeItemFactsService(configuration: .init(apiKey: key)) }
-            } else if EbayConnections.make(.sandbox) != nil {
+            } else if EbayConnections.make(environment) != nil {
                 services.ebayNeedsSignIn = true   // everything is configured except the sign-in itself
             }
         }

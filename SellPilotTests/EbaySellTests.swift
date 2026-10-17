@@ -35,6 +35,12 @@ final class EbaySellTests: XCTestCase {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [SellStub.self]
         return EbaySellService(configuration: .init(environment: environment, credentials: .init(appID: "app", certID: "cert"), tokens: StaticEbayTokenSource(token: "user-token")), session: URLSession(configuration: config))
     }
+    private func liveService(allow: Bool, zip: String) -> EbaySellService {
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [SellStub.self]
+        var configuration = EbaySellConfiguration(environment: .production, credentials: .init(appID: "app", certID: "cert"), tokens: StaticEbayTokenSource(token: "user-token"))
+        configuration.allowLivePublishing = allow; configuration.locationPostalCode = zip; configuration.locationKey = "SELLPILOT_\(zip)"
+        return EbaySellService(configuration: configuration, session: URLSession(configuration: config))
+    }
     private func service(tokens: any EbayUserTokenSource) -> EbaySellService {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [SellStub.self]
         return EbaySellService(configuration: .init(environment: .sandbox, credentials: .init(appID: "app", certID: "cert"), tokens: tokens), session: URLSession(configuration: config))
@@ -190,6 +196,8 @@ final class EbaySellTests: XCTestCase {
         var environment = EbaySellEnvironment.sandbox
         var published: [ListingDraft] = []
         var failure: Error?
+        var policyList = EbaySellerPolicies(fulfillment: [EbayPolicy(id: "F1", name: "Standard shipping"), EbayPolicy(id: "F2", name: "Express")], payment: [EbayPolicy(id: "P1", name: "Managed payments")], returns: [EbayPolicy(id: "R1", name: "30-day returns")])
+        func policies() async throws -> EbaySellerPolicies { policyList }
         var aspectList = [EbayAspect(name: "Brand", required: true, selectionOnly: false, multiValue: false, values: []), EbayAspect(name: "Voltage", required: true, selectionOnly: false, multiValue: false, values: [])]
         func suggestCategories(query: String) async throws -> [EbayCategory] { [EbayCategory(id: "168134", name: "Impact Drivers", path: "Tools › Impact Drivers"), EbayCategory(id: "1", name: "Other", path: "Other")] }
         func aspects(for categoryID: String) async throws -> [EbayAspect] { aspectList }
@@ -388,5 +396,104 @@ final class EbaySellTests: XCTestCase {
         _ = try await service().publish(draft: draft, photos: photos, conditionNotes: "")
         let put = try XCTUnwrap(SellStub.log.first { $0.method == "PUT" && $0.path.contains("inventory_item") })
         XCTAssertEqual((try XCTUnwrap(JSONSerialization.jsonObject(with: put.body) as? [String: Any]))["condition"] as? String, "USED_GOOD")
+    }
+
+    // MARK: Real eBay (live) safeguards
+
+    func testRealEbayPublishingNeedsTheSwitchAndAShipFromZip() async throws {
+        SellStub.route = { request, body in
+            let path = request.url!.path, method = request.httpMethod ?? ""
+            if path == "/sell/inventory/v1/location/SELLPILOT_94107" { return method == "GET" ? Reply(status: 404) : Reply(status: 204) }
+            if path.hasSuffix("create_image_from_file") { return Reply(status: 201, headers: ["Location": "https://api.ebay.com/commerce/media/v1_beta/image/IMG1"]) }
+            return self.happyRoute(request, body)
+        }
+        let (draft, photos) = try draft()
+        do { _ = try await liveService(allow: false, zip: "94107").publish(draft: draft, photos: photos, conditionNotes: ""); XCTFail() } catch { XCTAssertTrue(error.localizedDescription.contains("isn't enabled")) }
+        do { _ = try await liveService(allow: true, zip: "abc").publish(draft: draft, photos: photos, conditionNotes: ""); XCTFail() } catch { XCTAssertTrue(error.localizedDescription.contains("5-digit ZIP")) }
+        XCTAssertTrue(SellStub.log.filter { $0.path.hasPrefix("/sell/") }.isEmpty, "nothing reaches eBay while a safeguard stops it")
+
+        let result = try await liveService(allow: true, zip: "94107").publish(draft: draft, photos: photos, conditionNotes: "")
+        XCTAssertEqual(result.url.absoluteString, "https://www.ebay.com/itm/110591201126", "a real listing links to real eBay")
+        XCTAssertTrue(SellStub.log.allSatisfy { $0.request.url?.host != "api.sandbox.ebay.com" }, "nothing goes to the sandbox")
+        let location = try XCTUnwrap(SellStub.log.first { $0.method == "POST" && $0.path == "/sell/inventory/v1/location/SELLPILOT_94107" })
+        let address = ((try XCTUnwrap(JSONSerialization.jsonObject(with: location.body) as? [String: Any]))["location"] as? [String: Any])?["address"] as? [String: String]
+        XCTAssertEqual(address?["postalCode"], "94107"); XCTAssertEqual(address?["country"], "US")
+        let offer = try XCTUnwrap(SellStub.log.first { $0.method == "POST" && $0.path == "/sell/inventory/v1/offer" })
+        XCTAssertEqual((try XCTUnwrap(JSONSerialization.jsonObject(with: offer.body) as? [String: Any]))["merchantLocationKey"] as? String, "SELLPILOT_94107")
+    }
+
+    func testTheSellersChosenPoliciesAreUsedOnTheOffer() async throws {
+        SellStub.route = happyRoute
+        var (draft, photos) = try draft()
+        draft.ebayFulfillmentPolicyID = "F2"; draft.ebayPaymentPolicyID = "P2"; draft.ebayReturnPolicyID = "R2"
+        _ = try await service().publish(draft: draft, photos: photos, conditionNotes: "")
+        let offer = try XCTUnwrap(SellStub.log.first { $0.method == "POST" && $0.path == "/sell/inventory/v1/offer" })
+        let policies = (try XCTUnwrap(JSONSerialization.jsonObject(with: offer.body) as? [String: Any]))["listingPolicies"] as? [String: String]
+        XCTAssertEqual(policies, ["fulfillmentPolicyId": "F2", "paymentPolicyId": "P2", "returnPolicyId": "R2"])
+    }
+
+    func testPoliciesAreListedByNameAndOnlyTheSandboxCreatesDefaults() async throws {
+        SellStub.route = { request, body in
+            let path = request.url!.path, method = request.httpMethod ?? ""
+            if method == "GET", path == "/sell/account/v1/fulfillment_policy" { return Reply(body: ["fulfillmentPolicies": [["fulfillmentPolicyId": "F1", "name": "Standard shipping"], ["fulfillmentPolicyId": "F2", "name": "Express"]]]) }
+            if method == "GET", path == "/sell/account/v1/payment_policy" { return Reply(body: ["paymentPolicies": [["paymentPolicyId": "P1", "name": "Managed payments"]]]) }
+            if method == "GET", path == "/sell/account/v1/return_policy" { return Reply(body: ["returnPolicies": [["returnPolicyId": "R1", "name": "30-day returns"]]]) }
+            return self.happyRoute(request, body)
+        }
+        let listed = try await service().policies()
+        XCTAssertEqual(listed.fulfillment.map(\.name), ["Standard shipping", "Express"]); XCTAssertEqual(listed.payment.first?.id, "P1"); XCTAssertEqual(listed.returns.first?.name, "30-day returns")
+
+        SellStub.log = []
+        SellStub.route = { request, body in
+            let path = request.url!.path, method = request.httpMethod ?? ""
+            if method == "GET", path.hasSuffix("_policy") { return Reply(body: [String: Any]()) }
+            return self.happyRoute(request, body)
+        }
+        let real = try await liveService(allow: true, zip: "94107").policies()
+        XCTAssertEqual(real, EbaySellerPolicies(), "a real seller with no policies gets none made up for them")
+        XCTAssertFalse(SellStub.log.contains { $0.method == "POST" && $0.path.hasSuffix("_policy") })
+    }
+
+    @MainActor func testPoliciesDefaultToTheFirstAndKeepAValidChoice() async throws {
+        let ebay = FakeEbay(); let flow = try workflow(ebay)
+        await flow.loadEbayPolicies(0)
+        XCTAssertEqual(flow.item.listings[0].ebayFulfillmentPolicyID, "F1"); XCTAssertEqual(flow.item.listings[0].ebayPaymentPolicyID, "P1"); XCTAssertEqual(flow.item.listings[0].ebayReturnPolicyID, "R1")
+        flow.item.listings[0].ebayFulfillmentPolicyID = "F2"
+        await flow.loadEbayPolicies(0); XCTAssertEqual(flow.item.listings[0].ebayFulfillmentPolicyID, "F2", "a valid choice is kept")
+        flow.item.listings[0].ebayFulfillmentPolicyID = "GONE"
+        await flow.loadEbayPolicies(0); XCTAssertEqual(flow.item.listings[0].ebayFulfillmentPolicyID, "F1", "a policy that no longer exists is replaced")
+    }
+
+    func testTheConfirmationShowsEverythingAndWarnsOnlyForRealListings() {
+        var draft = ListingDraft(marketplace: .ebay, title: "DEWALT DCF887B Impact Driver (tool only)", description: "d", price: 49, condition: .good, category: "c", keywords: [], itemSpecifics: [:], shippingNotes: "", localPickupNotes: "", photoOrder: [UUID(), UUID(), UUID()])
+        draft.ebayCategoryName = "Impact Drivers"; draft.ebayFulfillmentPolicyID = "F2"; draft.ebayPaymentPolicyID = "P1"; draft.ebayReturnPolicyID = "R1"
+        let policies = EbaySellerPolicies(fulfillment: [EbayPolicy(id: "F2", name: "Express")], payment: [EbayPolicy(id: "P1", name: "Managed payments")], returns: [EbayPolicy(id: "R1", name: "30-day returns")])
+        let live = EbayPublishCard.confirmationSummary(draft: draft, photoCount: 3, policies: policies, live: true)
+        for expected in ["DEWALT DCF887B Impact Driver (tool only)", "$49", "Good", "3 photos", "Impact Drivers", "Express", "Managed payments", "30-day returns", "LIVE listing", "fees"] { XCTAssertTrue(live.contains(expected), expected) }
+        let sandbox = EbayPublishCard.confirmationSummary(draft: draft, photoCount: 1, policies: policies, live: false)
+        XCTAssertTrue(sandbox.contains("1 photo\n") || sandbox.contains("1 photo"), "singular"); XCTAssertFalse(sandbox.contains("LIVE")); XCTAssertTrue(sandbox.contains("Sandbox only"))
+    }
+
+    func testLiveSetupChecks() {
+        XCTAssertTrue(LiveSettings.isValidZip("94107")); XCTAssertFalse(LiveSettings.isValidZip("9410")); XCTAssertFalse(LiveSettings.isValidZip("94107-1234")); XCTAssertFalse(LiveSettings.isValidZip(""))
+        let none: EbaySetupReport.Loader = { _ in nil }
+        XCTAssertEqual(EbaySetupReport.missing(live: true, zip: "", none), ["Production App ID", "Production redirect name (RuName)", "Ship-from ZIP code", "Token server URL (or Production Cert ID)"])
+        let done: EbaySetupReport.Loader = { [.ebayAppID, .ebayRuName, .ebayAuthProxy].contains($0) ? "x" : nil }
+        XCTAssertTrue(EbaySetupReport.missing(live: true, zip: "94107", done).isEmpty)
+        XCTAssertEqual(EbaySetupReport.missing(live: true, zip: "oops", done), ["Ship-from ZIP code"])
+    }
+
+    func testThePhotoAddressMustBeEbaysOwnBeforeTheSellersTokenIsSentThere() async throws {
+        for bad in ["https://evil.example.com/image/1", "http://api.ebay.com/commerce/media/v1_beta/image/1", "https://api.ebay.com.evil.example/image/1"] {
+            SellStub.log = []
+            SellStub.route = { request, body in
+                request.url!.path.hasSuffix("create_image_from_file") ? Reply(status: 201, headers: ["Location": bad]) : self.happyRoute(request, body)
+            }
+            let (draft, photos) = try draft()
+            do { _ = try await service().publish(draft: draft, photos: photos, conditionNotes: ""); XCTFail(bad) }
+            catch { XCTAssertTrue(error.localizedDescription.contains("unexpected photo address"), bad) }
+            XCTAssertFalse(SellStub.log.contains { $0.request.url?.host?.contains("evil") == true }, "the token never leaves eBay's domain")
+            XCTAssertFalse(SellStub.log.contains { $0.path.contains("inventory_item") }, "nothing is created")
+        }
     }
 }

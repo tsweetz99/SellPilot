@@ -40,7 +40,7 @@ struct ListingReviewView: View {
                 switch workflow.services.ebaySetup {
                 case .ready: EbayPublishCard(workflow: workflow, index: index)
                 case .needsSignIn: EbayConnectCard(workflow: workflow)
-                case .notConfigured: if !EbaySetupReport.missing().isEmpty { EbaySetupCard(missing: EbaySetupReport.missing(), workflow: workflow) }
+                case .notConfigured: let missing = EbaySetupReport.missing(live: workflow.services.ebayIsLive); if !missing.isEmpty { EbaySetupCard(missing: missing, workflow: workflow) }
                 }
             }
         }

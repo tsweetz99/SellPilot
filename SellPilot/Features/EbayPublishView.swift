@@ -7,7 +7,7 @@ struct EbayPublishCard: View {
     @State private var confirm = false
 
     private var draft: ListingDraft { workflow.item.listings[index] }
-    private var sandbox: Bool { workflow.services.ebay?.environment == .sandbox }
+    private var sandbox: Bool { workflow.services.ebay?.environment != .production }
     private var requiredAspects: [EbayAspect] { workflow.ebayAspects.filter(\.required) }
     private var missing: [String] { EbaySpecifics.missing(workflow.ebayAspects, in: draft.itemSpecifics) }
 
@@ -25,15 +25,30 @@ struct EbayPublishCard: View {
         } else {
             categorySection
             specificsSection
+            policiesSection
             Button { confirm = true } label: { Label(workflow.busy ? "Publishing…" : sandbox ? "Publish test listing" : "Publish to eBay", systemImage: "paperplane.fill").frame(maxWidth: .infinity).padding(12) }
-                .buttonStyle(.borderedProminent).disabled(workflow.busy || !missing.isEmpty).accessibilityIdentifier("ebayPublish")
+                .buttonStyle(.borderedProminent).tint(sandbox ? PilotTheme.accent : .red).disabled(workflow.busy || !missing.isEmpty).accessibilityIdentifier("ebayPublish")
             if !missing.isEmpty { Text("Still needed: \(missing.joined(separator: ", "))").font(.caption).foregroundStyle(.red) }
         }
     }
-    .task { await workflow.loadEbayAspects(index) }
-    .confirmationDialog(sandbox ? "Create this test listing in the eBay Sandbox?" : "Publish this listing to eBay?", isPresented: $confirm, titleVisibility: .visible) {
-        Button(sandbox ? "Create test listing" : "Publish") { Task { await workflow.publishToEbay(index) } }
-    } message: { Text(sandbox ? "This only creates a test listing. It does not go on real eBay." : "This creates a real listing at \(draft.price.money).") } }
+    .task { await workflow.loadEbayAspects(index); await workflow.loadEbayPolicies(index) }
+    .confirmationDialog(sandbox ? "Create this test listing in the eBay Sandbox?" : "Publish this to REAL eBay?", isPresented: $confirm, titleVisibility: .visible) {
+        Button(sandbox ? "Create test listing" : "Publish live listing", role: sandbox ? nil : .destructive) { Task { await workflow.publishToEbay(index) } }
+    } message: { Text(Self.confirmationSummary(draft: draft, photoCount: draft.photoOrder.count, policies: workflow.ebayPolicies, live: !sandbox)) } }
+
+    /// Everything the seller is about to put on eBay, in one place, before anything is sent.
+    static func confirmationSummary(draft: ListingDraft, photoCount: Int, policies: EbaySellerPolicies, live: Bool) -> String {
+        func name(_ id: String?, in list: [EbayPolicy]) -> String { list.first { $0.id == id }?.name ?? "default" }
+        return [
+            String(draft.title.prefix(80)),
+            "\(draft.price.money) · \(draft.condition.rawValue) · \(photoCount) photo\(photoCount == 1 ? "" : "s")",
+            "Category: \(draft.ebayCategoryName ?? "not chosen")",
+            "Shipping: \(name(draft.ebayFulfillmentPolicyID, in: policies.fulfillment))",
+            "Payment: \(name(draft.ebayPaymentPolicyID, in: policies.payment))",
+            "Returns: \(name(draft.ebayReturnPolicyID, in: policies.returns))",
+            live ? "This creates a LIVE listing that real buyers can purchase. eBay may charge listing and final value fees. You can end it from here." : "Sandbox only: nothing goes on real eBay.",
+        ].joined(separator: "\n")
+    }
 
     private var categorySection: some View { VStack(alignment: .leading, spacing: 6) {
         Text("eBay category").font(.caption.bold())
@@ -43,6 +58,22 @@ struct EbayPublishCard: View {
         } label: { HStack { Text(draft.ebayCategoryName ?? "Choose a category"); Spacer(); Image(systemName: "chevron.up.chevron.down").font(.caption) }.padding(10).background(.quaternary, in: RoundedRectangle(cornerRadius: 10)) }
             .disabled(workflow.busy)
     } }
+
+    private var policiesSection: some View { VStack(alignment: .leading, spacing: 8) {
+        Text("Your eBay policies").font(.caption.bold())
+        policyMenu("Shipping", selection: Binding(get: { draft.ebayFulfillmentPolicyID }, set: { workflow.item.listings[index].ebayFulfillmentPolicyID = $0 }), options: workflow.ebayPolicies.fulfillment)
+        policyMenu("Payment", selection: Binding(get: { draft.ebayPaymentPolicyID }, set: { workflow.item.listings[index].ebayPaymentPolicyID = $0 }), options: workflow.ebayPolicies.payment)
+        policyMenu("Returns", selection: Binding(get: { draft.ebayReturnPolicyID }, set: { workflow.item.listings[index].ebayReturnPolicyID = $0 }), options: workflow.ebayPolicies.returns)
+    } }
+
+    private func policyMenu(_ title: String, selection: Binding<String?>, options: [EbayPolicy]) -> some View {
+        Menu {
+            ForEach(options) { option in Button(option.name) { selection.wrappedValue = option.id } }
+        } label: {
+            HStack { Text(title).foregroundStyle(.secondary); Spacer(); Text(options.first { $0.id == selection.wrappedValue }?.name ?? (options.isEmpty ? "Loading…" : "Choose")); Image(systemName: "chevron.up.chevron.down").font(.caption) }
+                .padding(10).background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+        }.disabled(options.isEmpty || workflow.busy)
+    }
 
     private var specificsSection: some View { VStack(alignment: .leading, spacing: 8) {
         Text("Required eBay details").font(.caption.bold())
@@ -64,8 +95,8 @@ struct EbayConnectCard: View {
     @State private var showSettings = false
 
     var body: some View { PilotCard {
-        Text("Publish to eBay Sandbox (test)").font(.headline)
-        Text("Connect your eBay account to publish. In Settings, tap \"Connect eBay Sandbox account\" and sign in as your sandbox seller.").font(.caption).foregroundStyle(.secondary)
+        Text(workflow.services.ebayIsLive ? "Publish to eBay" : "Publish to eBay Sandbox (test)").font(.headline)
+        Text(workflow.services.ebayIsLive ? "Connect your eBay account to publish real listings. In Settings, tap \"Connect eBay account\" under Real eBay." : "Connect your eBay account to publish. In Settings, tap \"Connect eBay Sandbox account\" and sign in as your sandbox seller.").font(.caption).foregroundStyle(.secondary)
         Button { showSettings = true } label: { Label("Open Settings", systemImage: "gearshape").frame(maxWidth: .infinity).padding(12) }
             .buttonStyle(.borderedProminent).accessibilityIdentifier("ebayOpenSettings")
     }
@@ -75,11 +106,18 @@ struct EbayConnectCard: View {
 /// Which sandbox publishing settings are missing, so the screen can say so instead of hiding the section.
 enum EbaySetupReport {
     typealias Loader = (APIKeyStore.Account) -> String?
-    static func missing(_ load: Loader = { APIKeyStore.load($0) }) -> [String] {
+    static func missing(live: Bool = false, zip: String = LiveSettings.shipFromZip, _ load: Loader = { APIKeyStore.load($0) }) -> [String] {
         var items: [String] = []
-        if load(.ebaySandboxAppID) == nil { items.append("Sandbox App ID") }
-        if load(.ebaySandboxRuName) == nil { items.append("Redirect name (RuName)") }
-        if load(.ebayAuthProxy) == nil && load(.ebaySandboxCertID) == nil { items.append("Token server URL (or Sandbox Cert ID)") }
+        if live {
+            if load(.ebayAppID) == nil { items.append("Production App ID") }
+            if load(.ebayRuName) == nil { items.append("Production redirect name (RuName)") }
+            if !LiveSettings.isValidZip(zip) { items.append("Ship-from ZIP code") }
+            if load(.ebayAuthProxy) == nil && load(.ebayCertID) == nil { items.append("Token server URL (or Production Cert ID)") }
+        } else {
+            if load(.ebaySandboxAppID) == nil { items.append("Sandbox App ID") }
+            if load(.ebaySandboxRuName) == nil { items.append("Redirect name (RuName)") }
+            if load(.ebayAuthProxy) == nil && load(.ebaySandboxCertID) == nil { items.append("Token server URL (or Sandbox Cert ID)") }
+        }
         return items
     }
 }
@@ -90,7 +128,7 @@ struct EbaySetupCard: View {
     @State private var showSettings = false
 
     var body: some View { PilotCard {
-        Text("Publish to eBay Sandbox (test)").font(.headline)
+        Text(workflow.services.ebayIsLive ? "Publish to eBay" : "Publish to eBay Sandbox (test)").font(.headline)
         Text("Not set up on this device yet. Still needed in Settings: \(missing.joined(separator: ", ")). Then connect your eBay account.").font(.caption).foregroundStyle(.secondary)
         Button { showSettings = true } label: { Label("Open Settings", systemImage: "gearshape").frame(maxWidth: .infinity).padding(12) }
             .buttonStyle(.borderedProminent).accessibilityIdentifier("ebaySetupSettings")

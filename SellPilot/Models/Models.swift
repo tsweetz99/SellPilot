@@ -90,6 +90,8 @@ struct ListingDraft: Codable, Equatable, Identifiable {
     /// Set once eBay accepts the listing. `ebayEnvironment` is "sandbox" for test listings.
     var ebayCategoryID: String? = nil; var ebayCategoryName: String? = nil; var ebayRequiredSpecifics: [String]? = nil
     var ebayOfferID: String? = nil; var ebayListingID: String? = nil; var ebayListingURL: URL? = nil; var ebayEnvironment: String? = nil
+    /// The seller's chosen business policies for this listing; the first of each is used when unset.
+    var ebayFulfillmentPolicyID: String? = nil; var ebayPaymentPolicyID: String? = nil; var ebayReturnPolicyID: String? = nil
     var fullText: String { "\(title)\n\(price.formatted(.currency(code: "USD")))\n\(condition.rawValue)\n\n\(description)\n\n\(shippingNotes)\n\(localPickupNotes)" }
 }
 struct SellItem: Codable, Equatable, Identifiable {

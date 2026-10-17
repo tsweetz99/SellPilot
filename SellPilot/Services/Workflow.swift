@@ -10,6 +10,7 @@ import Observation
     /// eBay category suggestions and the chosen category's item specifics, used by the publish card.
     var ebayCategoryChoices: [EbayCategory] = []
     var ebayAspects: [EbayAspect] = []
+    var ebayPolicies = EbaySellerPolicies()
     /// True when the last eBay failure means the seller must sign in again; the alert then offers to open Settings.
     var reconnectNeeded = false
     /// Rebuilt after the seller reconnects eBay in Settings, so a fresh sign-in is picked up without reopening the item.
@@ -107,6 +108,17 @@ import Observation
     func loadEbayAspects(_ index: Int) async {
         guard let ebay = services.ebay, item.listings.indices.contains(index), let id = item.listings[index].ebayCategoryID, ebayAspects.isEmpty else { return }
         ebayAspects = (try? await ebay.aspects(for: id)) ?? []
+    }
+
+    /// Loads the seller's business policies and, if none is chosen yet, selects the first of each so the seller can see and change them.
+    func loadEbayPolicies(_ index: Int) async {
+        guard let ebay = services.ebay, item.listings.indices.contains(index), let loaded = try? await ebay.policies() else { return }
+        ebayPolicies = loaded
+        func keep(_ chosen: String?, in list: [EbayPolicy]) -> String? { chosen.flatMap { id in list.contains { $0.id == id } ? id : nil } ?? list.first?.id }
+        item.listings[index].ebayFulfillmentPolicyID = keep(item.listings[index].ebayFulfillmentPolicyID, in: loaded.fulfillment)
+        item.listings[index].ebayPaymentPolicyID = keep(item.listings[index].ebayPaymentPolicyID, in: loaded.payment)
+        item.listings[index].ebayReturnPolicyID = keep(item.listings[index].ebayReturnPolicyID, in: loaded.returns)
+        save()
     }
 
     private func applyEbayCategory(_ category: EbayCategory, index: Int, using ebay: any EbayListingService) async throws {

@@ -92,6 +92,13 @@ for a in body.get("aspects", []):
 print("   required:", ", ".join(aspects) or "(none)")
 aspects.setdefault("Brand", "DEWALT")
 
+# --- 2b. which conditions the category accepts (the app maps its conditions to these)
+step("2b", "Allowed conditions for that category (Metadata API)")
+for label, tok in (("seller token", user), ("app token", app_token)):
+    status, _, body = call("GET", f"{API}/sell/metadata/v1/marketplace/EBAY_US/get_item_condition_policies?filter=" + urllib.parse.quote("categoryIds:{%s}" % category, safe=""), tok)
+    ids = [c.get("conditionId") for p in body.get("itemConditionPolicies", []) for c in p.get("itemConditions", [])]
+    print(f"   {label}: HTTP {status}, condition IDs: {ids}")
+
 # --- 3. business policies opt-in
 step(3, "Opt in to business policies (Account API)")
 status, _, body = call("POST", f"{API}/sell/account/v1/program/opt_in", user, {"programType": "SELLING_POLICY_MANAGEMENT"})

@@ -32,8 +32,16 @@ protocol EbayListingService {
     func withdraw(offerID: String) async throws
     /// The eBay condition IDs this category accepts; empty when that cannot be determined.
     func allowedConditions(for categoryID: String) async throws -> [Int]
+    /// The seller's business policies, for choosing which to use.
+    func policies() async throws -> EbaySellerPolicies
 }
-extension EbayListingService { func allowedConditions(for categoryID: String) async throws -> [Int] { [] } }
+extension EbayListingService {
+    func allowedConditions(for categoryID: String) async throws -> [Int] { [] }
+    func policies() async throws -> EbaySellerPolicies { EbaySellerPolicies() }
+}
+
+struct EbayPolicy: Equatable, Identifiable { var id: String; var name: String }
+struct EbaySellerPolicies: Equatable { var fulfillment: [EbayPolicy] = []; var payment: [EbayPolicy] = []; var returns: [EbayPolicy] = [] }
 
 /// eBay's condition IDs differ by category (books accept 2750, 4000, 5000 and 6000 but not 3000), so the app's four
 /// simple conditions are mapped to whichever eBay condition the category allows.
@@ -124,6 +132,8 @@ struct EbaySellConfiguration {
     var locationKey = "SELLPILOT_HOME"
     /// Where items ship from. The sandbox default is a placeholder; production must use the seller's real location.
     var locationPostalCode = "95125"
+    /// Real listings are refused unless this is set, which only happens when the seller has turned live publishing on.
+    var allowLivePublishing = false
 }
 
 struct EbaySellService: EbayListingService {
@@ -263,6 +273,22 @@ struct EbaySellService: EbayListingService {
         return SellerSetup(fulfillmentPolicyID: ids["fulfillmentPolicyId"]!, paymentPolicyID: ids["paymentPolicyId"]!, returnPolicyID: ids["returnPolicyId"]!)
     }
 
+    func policies() async throws -> EbaySellerPolicies {
+        _ = try? await sell("POST", "sell/account/v1/program/opt_in", json: ["programType": "SELLING_POLICY_MANAGEMENT"])
+        func list(_ path: String, _ key: String, _ idKey: String) async throws -> [EbayPolicy] {
+            let data = object(try expect([200], try await sell("GET", "sell/account/v1/\(path)", query: [URLQueryItem(name: "marketplace_id", value: configuration.marketplaceID)])))
+            return ((data[key] as? [[String: Any]]) ?? []).compactMap { entry in (entry[idKey] as? String).map { EbayPolicy(id: $0, name: (entry["name"] as? String) ?? $0) } }
+        }
+        func all() async throws -> EbaySellerPolicies {
+            EbaySellerPolicies(fulfillment: try await list("fulfillment_policy", "fulfillmentPolicies", "fulfillmentPolicyId"), payment: try await list("payment_policy", "paymentPolicies", "paymentPolicyId"),
+                               returns: try await list("return_policy", "returnPolicies", "returnPolicyId"))
+        }
+        var result = try await all()
+        // A sandbox test seller starts with none, so defaults are made. A real seller's policies are never created for them.
+        if configuration.environment == .sandbox, result.fulfillment.isEmpty || result.payment.isEmpty || result.returns.isEmpty { _ = try await ensureSellerSetup(); result = try await all() }
+        return result
+    }
+
     // MARK: Photos
 
     func uploadImage(_ photo: SellItemPhoto) async throws -> URL {
@@ -271,6 +297,8 @@ struct EbaySellService: EbayListingService {
         let upload = try await asSeller("POST", configuration.environment.mediaBase.appending(path: "commerce/media/v1_beta/image/create_image_from_file"), multipart: ("image", "photo.jpg", jpeg))
         guard [200, 201].contains(upload.1.statusCode) else { throw Self.failure(upload.1.statusCode, upload.0) }
         guard let location = upload.1.value(forHTTPHeaderField: "Location"), let imageURL = URL(string: location) else { throw ServiceError.invalid("eBay accepted the photo but did not say where it is.") }
+        // The seller's token is sent to this address next, so it must be one of eBay's own.
+        guard imageURL.scheme == "https", let host = imageURL.host?.lowercased(), host == "ebay.com" || host.hasSuffix(".ebay.com") else { throw ServiceError.invalid("eBay returned an unexpected photo address, so the photo was not used.") }
         let details = object(try expect([200], try await asSeller("GET", imageURL)))
         guard let hosted = (details["imageUrl"] as? String).flatMap(URL.init(string:)) else { throw ServiceError.invalid("eBay did not return a hosted photo address.") }
         return hosted
@@ -287,7 +315,10 @@ struct EbaySellService: EbayListingService {
     }
 
     func publish(draft: ListingDraft, photos: [SellItemPhoto], conditionNotes: String) async throws -> EbayPublishResult {
-        guard configuration.environment == .sandbox else { throw ServiceError.invalid("Publishing to real eBay isn't enabled yet. Use the sandbox for test listings.") }
+        if configuration.environment == .production {
+            guard configuration.allowLivePublishing else { throw ServiceError.invalid("Publishing to real eBay isn't enabled. Turn it on in Settings.") }
+            guard LiveSettings.isValidZip(configuration.locationPostalCode) else { throw ServiceError.invalid("Enter the 5-digit ZIP code you ship from in Settings before publishing to real eBay.") }
+        }
         guard let categoryID = draft.ebayCategoryID, !categoryID.isEmpty else { throw ServiceError.invalid("Choose an eBay category first.") }
         guard !draft.title.trimmingCharacters(in: .whitespaces).isEmpty, draft.price > 0, !photos.isEmpty else { throw ServiceError.invalid("A title, a positive price and at least one photo are required.") }
         let setup = try await ensureSellerSetup()
@@ -310,7 +341,7 @@ struct EbaySellService: EbayListingService {
         let offer: [String: Any] = [
             "sku": sku, "marketplaceId": configuration.marketplaceID, "format": "FIXED_PRICE", "availableQuantity": 1, "categoryId": categoryID, "merchantLocationKey": configuration.locationKey,
             "listingDescription": Self.html(draft.description), "pricingSummary": ["price": ["value": String(format: "%.2f", draft.price), "currency": "USD"]],
-            "listingPolicies": ["fulfillmentPolicyId": setup.fulfillmentPolicyID, "paymentPolicyId": setup.paymentPolicyID, "returnPolicyId": setup.returnPolicyID],
+            "listingPolicies": ["fulfillmentPolicyId": draft.ebayFulfillmentPolicyID ?? setup.fulfillmentPolicyID, "paymentPolicyId": draft.ebayPaymentPolicyID ?? setup.paymentPolicyID, "returnPolicyId": draft.ebayReturnPolicyID ?? setup.returnPolicyID],
         ]
         let offerID = try await upsertOffer(offer, sku: sku)
         let published = object(try expect([200], try await sell("POST", "sell/inventory/v1/offer/\(offerID)/publish")))
