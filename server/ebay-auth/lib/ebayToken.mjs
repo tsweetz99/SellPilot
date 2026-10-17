@@ -12,8 +12,13 @@ function form(pairs) {
   return pairs.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
 }
 
-/** @param {{method: string, body: unknown, env: Record<string, string|undefined>, fetchImpl?: typeof fetch}} request */
-export async function handleEbayToken({ method, body, env, fetchImpl = fetch }) {
+const INSTALL_KEY = /^[0-9a-f]{32,64}$/i;
+
+/**
+ * @param {{method: string, body: unknown, env: Record<string, string|undefined>, fetchImpl?: typeof fetch,
+ *          installKey?: string|null, limiter?: {check(key: string): Promise<{allowed: boolean, retryAfterSeconds: number}>}}} request
+ */
+export async function handleEbayToken({ method, body, env, fetchImpl = fetch, installKey = null, limiter = null }) {
   if (method !== "POST") return fail(405, "method_not_allowed", "Use POST.");
   if (!body || typeof body !== "object") return fail(400, "invalid_request", "Send a JSON object.");
 
@@ -38,6 +43,18 @@ export async function handleEbayToken({ method, body, env, fetchImpl = fetch }) 
     case "client_credentials":
       // An application token needs no seller login, so on a public address anyone could ask for one. Off unless explicitly enabled.
       if (env.EBAY_ALLOW_APP_TOKENS !== "true") return fail(403, "forbidden", "Application tokens are not enabled on this server.");
+      // Each app install makes up a random key. It proves nothing about who is calling, but it gives every install its own
+      // rate-limit bucket and lets a misbehaving one be blocked without affecting the others.
+      if (typeof installKey !== "string" || !INSTALL_KEY.test(installKey)) return fail(401, "install_key_required", "Send this app's install key in the X-SellPilot-Install header.");
+      if ((env.EBAY_BLOCKED_INSTALL_KEYS ?? "").split(",").map((k) => k.trim().toLowerCase()).includes(installKey.toLowerCase())) return fail(403, "forbidden", "This install is blocked.");
+      if (!limiter) return fail(503, "limiter_unavailable", "Rate limiting is not available, so application tokens are paused.");
+      try {
+        const verdict = await limiter.check(installKey.toLowerCase());
+        if (!verdict.allowed) return { status: 429, body: { error: "rate_limited", error_description: "Too many token requests. Try again later." }, retryAfterSeconds: verdict.retryAfterSeconds };
+      } catch {
+        // Failing closed: if the counts cannot be read, nobody gets an application token until they can.
+        return fail(503, "limiter_unavailable", "Rate limiting is not available, so application tokens are paused.");
+      }
       pairs = [["grant_type", "client_credentials"], ["scope", APP_SCOPE]];
       break;
     default:

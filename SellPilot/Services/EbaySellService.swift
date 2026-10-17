@@ -61,7 +61,8 @@ enum EbaySpecifics {
 
 struct EbaySellConfiguration {
     var environment: EbaySellEnvironment = .sandbox
-    var credentials: EbayCredentials
+    /// nil when application tokens come from the token server.
+    var credentials: EbayCredentials?
     var tokens: any EbayUserTokenSource
     var marketplaceID = "EBAY_US"
     var locationKey = "SELLPILOT_HOME"
@@ -72,12 +73,12 @@ struct EbaySellConfiguration {
 struct EbaySellService: EbayListingService {
     let configuration: EbaySellConfiguration
     private let session: URLSession
-    private let appTokens: EbayTokenProvider
+    private let appTokens: any EbayAppTokenSource
     var environment: EbaySellEnvironment { configuration.environment }
 
-    init(configuration: EbaySellConfiguration, session: URLSession = .shared) {
+    init(configuration: EbaySellConfiguration, session: URLSession = .shared, appTokens: (any EbayAppTokenSource)? = nil) {
         self.configuration = configuration; self.session = session
-        self.appTokens = EbayTokenProvider(configuration: EbayConfiguration(credentials: configuration.credentials, baseURL: configuration.environment.apiBase), session: session)
+        self.appTokens = appTokens ?? configuration.credentials.map { EbayTokenProvider(credentials: $0, baseURL: configuration.environment.apiBase, session: session) } ?? MissingAppTokenSource()
     }
 
     // MARK: HTTP

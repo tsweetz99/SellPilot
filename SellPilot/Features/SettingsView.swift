@@ -70,7 +70,7 @@ struct SettingsView: View {
                     }.disabled(sbxRuName.isEmpty && proxyURL.isEmpty)
                     if let connection { EbayConnectRow(connection: connection) }
                 } header: { Text("eBay Sandbox sign-in") } footer: {
-                    Text("Sign in with a sandbox test seller instead of pasting a token. SellPilot never sees your eBay password. Without a token server, the Cert ID is used directly from this device, which is fine for testing only.")
+                    Text("Sign in with a sandbox test seller instead of pasting a token. SellPilot never sees your eBay password. With a token server, eBay sign-in and app tokens go through it and the Cert ID is not needed on this device. Without one, the Cert ID is used directly from this device, which is fine for testing only.")
                 }
                 if let message { Section { Text(message).font(.footnote) } }
             }

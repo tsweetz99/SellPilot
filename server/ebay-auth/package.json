@@ -3,5 +3,10 @@
   "private": true,
   "type": "module",
   "description": "Sign in with eBay for SellPilot: a bounce page back into the app and a token function that keeps the Cert ID off the device.",
-  "scripts": { "test": "node --test" }
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
 }

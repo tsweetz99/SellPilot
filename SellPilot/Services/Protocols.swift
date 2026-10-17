@@ -45,20 +45,30 @@ extension AppServices {
         if !ProcessInfo.processInfo.arguments.contains("--ui-testing"), let key = APIKeyStore.load() {
             services.identification = ClaudeIdentificationService(configuration: .init(apiKey: key))
         }
-        if !ProcessInfo.processInfo.arguments.contains("--ui-testing"), let credentials = EbayCredentials.load() {
-            let ebay = EbayBrowseMarketResearchService(configuration: .init(credentials: credentials))
+        let testing = ProcessInfo.processInfo.arguments.contains("--ui-testing")
+        // With a token server configured, eBay application tokens come from it (the Cert ID can then stay off the device).
+        // A Cert ID still saved on the device is used as a fallback, so the switch never leaves a gap.
+        let server = APIKeyStore.load(.ebayAuthProxy).flatMap(URL.init(string:))
+        func appTokens(_ environment: EbaySellEnvironment, direct: EbayCredentials?) -> (any EbayAppTokenSource)? {
+            let local = direct.map { EbayTokenProvider(credentials: $0, baseURL: environment.apiBase, session: .shared) }
+            guard let server else { return local }
+            return FallbackAppTokenSource(primary: ProxyAppTokenProvider(endpoint: server, environment: environment, installKey: APIKeyStore.installKey()), fallback: local)
+        }
+        if !testing, let tokens = appTokens(.production, direct: EbayCredentials.load()) {
+            let ebay = EbayBrowseMarketResearchService(configuration: .init(credentials: EbayCredentials.load()), appTokens: tokens)
             if let key = APIKeyStore.load() { services.research = FilteredMarketResearchService(base: ebay, filter: ClaudeComparableFilter(configuration: .init(apiKey: key))) }
             else { services.research = ebay }
             services.pricing = AskingPricePricingService()
         }
-        if !ProcessInfo.processInfo.arguments.contains("--ui-testing"), let app = APIKeyStore.load(.ebaySandboxAppID), let cert = APIKeyStore.load(.ebaySandboxCertID) {
+        let sandboxCredentials = APIKeyStore.load(.ebaySandboxAppID).flatMap { app in APIKeyStore.load(.ebaySandboxCertID).map { EbayCredentials(appID: app, certID: $0) } }
+        if !testing, let tokens = appTokens(.sandbox, direct: sandboxCredentials) {
             // A signed-in eBay connection wins; a pasted token is the fallback for testing.
-            let source: (any EbayUserTokenSource)? = {
+            let seller: (any EbayUserTokenSource)? = {
                 if let connection = EbayConnections.make(.sandbox), connection.isConnected { return connection }
                 return APIKeyStore.load(.ebaySandboxUserToken).map { StaticEbayTokenSource(token: $0) }
             }()
-            if let source {
-                services.ebay = EbaySellService(configuration: .init(environment: .sandbox, credentials: .init(appID: app, certID: cert), tokens: source))
+            if let seller {
+                services.ebay = EbaySellService(configuration: .init(environment: .sandbox, credentials: sandboxCredentials, tokens: seller), appTokens: tokens)
                 if let key = APIKeyStore.load() { services.specifics = ClaudeSpecificsFiller(configuration: .init(apiKey: key)) }
             }
         }
