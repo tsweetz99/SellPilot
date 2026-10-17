@@ -189,10 +189,11 @@ final class EbaySellTests: XCTestCase {
     private final class FakeEbay: EbayListingService {
         var environment = EbaySellEnvironment.sandbox
         var published: [ListingDraft] = []
+        var failure: Error?
         var aspectList = [EbayAspect(name: "Brand", required: true, selectionOnly: false, multiValue: false, values: []), EbayAspect(name: "Voltage", required: true, selectionOnly: false, multiValue: false, values: [])]
         func suggestCategories(query: String) async throws -> [EbayCategory] { [EbayCategory(id: "168134", name: "Impact Drivers", path: "Tools › Impact Drivers"), EbayCategory(id: "1", name: "Other", path: "Other")] }
         func aspects(for categoryID: String) async throws -> [EbayAspect] { aspectList }
-        func publish(draft: ListingDraft, photos: [SellItemPhoto], conditionNotes: String) async throws -> EbayPublishResult { published.append(draft); return EbayPublishResult(offerID: "O", listingID: "L", url: URL(string: "https://sandbox.ebay.com/itm/L")!) }
+        func publish(draft: ListingDraft, photos: [SellItemPhoto], conditionNotes: String) async throws -> EbayPublishResult { if let failure { throw failure }; published.append(draft); return EbayPublishResult(offerID: "O", listingID: "L", url: URL(string: "https://sandbox.ebay.com/itm/L")!) }
         func withdraw(offerID: String) async throws {}
     }
     private struct FakeSpecifics: ItemSpecificsService { func fill(item: SellItem, aspects: [EbayAspect]) async throws -> [String: String] { ["Voltage": "20V"] } }
@@ -269,5 +270,60 @@ final class EbaySellTests: XCTestCase {
         XCTAssertEqual(sellerCalls.first?.request.value(forHTTPHeaderField: "Authorization"), "Bearer old-token")
         XCTAssertEqual(sellerCalls.dropFirst().first?.request.value(forHTTPHeaderField: "Authorization"), "Bearer new-token", "retried once with the refreshed token")
         XCTAssertTrue(sellerCalls.dropFirst(2).allSatisfy { $0.request.value(forHTTPHeaderField: "Authorization") == "Bearer old-token" || $0.request.value(forHTTPHeaderField: "Authorization") == "Bearer new-token" })
+    }
+
+    func testAnExpiredPastedTokenIsNotRetriedAndAsksTheSellerToReconnect() async throws {
+        SellStub.route = { request, body in
+            if request.url!.path.hasPrefix("/sell/") { return Reply(status: 401, body: ["errors": [["errorId": 1001, "message": "Invalid access token"]]]) }
+            return self.happyRoute(request, body)
+        }
+        let (draft, photos) = try draft()
+        do { _ = try await service(tokens: StaticEbayTokenSource(token: "stale")).publish(draft: draft, photos: photos, conditionNotes: ""); XCTFail() }
+        catch let error as EbayAuthError { XCTAssertTrue(error.localizedDescription.contains("pasted")); XCTAssertTrue(error.localizedDescription.contains("Settings")) }
+        XCTAssertEqual(SellStub.log.filter { $0.path == "/sell/account/v1/fulfillment_policy" }.count, 1, "the same rejected token is not sent twice for the same request")
+        XCTAssertFalse(SellStub.log.contains { $0.path.contains("inventory_item") || $0.path.hasSuffix("/publish") }, "nothing was published")
+        XCTAssertTrue(EbaySellService.failure(401, Data()) is EbayAuthError); XCTAssertFalse(EbaySellService.failure(500, Data()) is EbayAuthError)
+    }
+
+    @MainActor func testOnlySignInProblemsOfferToOpenSettings() async throws {
+        let ebay = FakeEbay(); let flow = try workflow(ebay)
+        await flow.prepareEbayListing(0)
+        ebay.failure = EbayAuthError(message: "Your eBay sign-in has expired. Reconnect eBay in Settings.")
+        await flow.publishToEbay(0)
+        XCTAssertEqual(flow.error, "Your eBay sign-in has expired. Reconnect eBay in Settings."); XCTAssertTrue(flow.reconnectNeeded)
+        flow.error = nil; flow.reconnectNeeded = false
+        ebay.failure = ServiceError.invalid("eBay: Item specific Voltage is missing.")
+        await flow.publishToEbay(0)
+        XCTAssertNotNil(flow.error); XCTAssertFalse(flow.reconnectNeeded, "ordinary failures keep the plain OK alert")
+        flow.reloadServices()   // what the app does when the seller comes back from Settings
+        XCTAssertNil(flow.services.ebay, "rebuilt from saved settings (none in tests)")
+    }
+
+    func testPublishingSetupStatesDriveWhatTheScreenShows() {
+        var services = AppServices()
+        XCTAssertEqual(services.ebaySetup, .notConfigured, "nothing set up: the demo button stays")
+        services.ebayNeedsSignIn = true
+        XCTAssertEqual(services.ebaySetup, .needsSignIn, "set up but signed out: a Connect card, not a missing section")
+        services.ebay = FakeEbay()
+        XCTAssertEqual(services.ebaySetup, .ready)
+    }
+
+    func testTheReadyScreenOpensOnEbayWhenPublishingThereIsPossible() {
+        func draft(_ market: Marketplace) -> ListingDraft { ListingDraft(marketplace: market, title: "t", description: "d", price: 1, condition: .good, category: "c", keywords: [], itemSpecifics: [:], shippingNotes: "", localPickupNotes: "", photoOrder: []) }
+        let both = [draft(.facebook), draft(.ebay)], onlyFacebook = [draft(.facebook)]
+        XCTAssertEqual(ListingReviewView.defaultMarketplace(listings: both, ebaySetup: .ready), .ebay)
+        XCTAssertEqual(ListingReviewView.defaultMarketplace(listings: both, ebaySetup: .needsSignIn), .ebay, "the Connect card is reachable without touching the menu")
+        XCTAssertEqual(ListingReviewView.defaultMarketplace(listings: both, ebaySetup: .notConfigured), .facebook, "without eBay set up, the order is unchanged")
+        XCTAssertEqual(ListingReviewView.defaultMarketplace(listings: onlyFacebook, ebaySetup: .ready), .facebook)
+        XCTAssertNil(ListingReviewView.defaultMarketplace(listings: [], ebaySetup: .ready))
+    }
+
+    func testSetupReportNamesWhatIsMissing() {
+        let none: EbaySetupReport.Loader = { _ in nil }
+        XCTAssertEqual(EbaySetupReport.missing(none), ["Sandbox App ID", "Redirect name (RuName)", "Token server URL (or Sandbox Cert ID)"])
+        let some: EbaySetupReport.Loader = { $0 == .ebaySandboxRuName ? "Name-SBX-ru" : nil }
+        XCTAssertEqual(EbaySetupReport.missing(some), ["Sandbox App ID", "Token server URL (or Sandbox Cert ID)"])
+        let all: EbaySetupReport.Loader = { [.ebaySandboxAppID, .ebaySandboxRuName, .ebayAuthProxy].contains($0) ? "x" : nil }
+        XCTAssertTrue(EbaySetupReport.missing(all).isEmpty)
     }
 }

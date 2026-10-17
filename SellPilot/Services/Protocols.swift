@@ -24,6 +24,9 @@ enum ServiceError: LocalizedError {
     case invalid(String)
     var errorDescription: String? { switch self { case .invalid(let message): message } }
 }
+/// Where eBay publishing stands, so the screen can say what is missing instead of hiding the whole section.
+enum EbayPublishingSetup: Equatable { case notConfigured, needsSignIn, ready }
+
 struct AppServices {
     var identification: any ProductIdentificationService = MockProductIdentificationService()
     var research: any MarketResearchService = MockMarketResearchService()
@@ -35,6 +38,9 @@ struct AppServices {
     /// Real eBay publishing (sandbox for now); nil until sandbox keys and a user token are configured.
     var ebay: (any EbayListingService)? = nil
     var specifics: (any ItemSpecificsService)? = nil
+    /// eBay is set up enough to connect, but no seller is signed in (and no test token is saved).
+    var ebayNeedsSignIn = false
+    var ebaySetup: EbayPublishingSetup { ebay != nil ? .ready : (ebayNeedsSignIn ? .needsSignIn : .notConfigured) }
 }
 extension AppServices {
     var usesLiveIdentification: Bool { identification.disclosure != nil }
@@ -70,6 +76,8 @@ extension AppServices {
             if let seller {
                 services.ebay = EbaySellService(configuration: .init(environment: .sandbox, credentials: sandboxCredentials, tokens: seller), appTokens: tokens)
                 if let key = APIKeyStore.load() { services.specifics = ClaudeSpecificsFiller(configuration: .init(apiKey: key)) }
+            } else if EbayConnections.make(.sandbox) != nil {
+                services.ebayNeedsSignIn = true   // everything is configured except the sign-in itself
             }
         }
         return services

@@ -10,12 +10,18 @@ struct ListingReviewView: View {
     @State private var market: Marketplace?
     @State private var share: SharePayload?
     @State private var copied = false
-    private var index: Int? { workflow.item.listings.firstIndex { $0.marketplace == (market ?? workflow.item.listings.first?.marketplace) } }
+    /// Opens on eBay when publishing there is possible, since that is the main action; otherwise on the first listing.
+    static func defaultMarketplace(listings: [ListingDraft], ebaySetup: EbayPublishingSetup) -> Marketplace? {
+        if ebaySetup != .notConfigured, listings.contains(where: { $0.marketplace == .ebay }) { return .ebay }
+        return listings.first?.marketplace
+    }
+    private var defaultMarket: Marketplace? { Self.defaultMarketplace(listings: workflow.item.listings, ebaySetup: workflow.services.ebaySetup) }
+    private var index: Int? { workflow.item.listings.firstIndex { $0.marketplace == (market ?? defaultMarket) } }
     var body: some View { VStack(alignment: .leading, spacing: 18) {
         Text("Your Listing Is Ready").font(.largeTitle.bold())
         Text("\(workflow.item.pricingStrategy.rawValue) · Review the facts, photos, and price before posting.").foregroundStyle(.secondary)
         if !workflow.item.listings.isEmpty {
-            Picker("Marketplace listing", selection: Binding(get: { market ?? workflow.item.listings.first?.marketplace ?? .ebay }, set: { market = $0 })) { ForEach(workflow.item.listings) { draft in Text(draft.marketplace.rawValue).tag(draft.marketplace) } }.pickerStyle(.menu)
+            Picker("Marketplace listing", selection: Binding(get: { market ?? defaultMarket ?? .ebay }, set: { market = $0 })) { ForEach(workflow.item.listings) { draft in Text(draft.marketplace.rawValue).tag(draft.marketplace) } }.pickerStyle(.menu)
         }
         if let index {
             editor(index)
@@ -27,10 +33,23 @@ struct ListingReviewView: View {
                 if copied { Text("Copied to clipboard").font(.caption).foregroundStyle(PilotTheme.accent) }
                 PrimaryButton(title: workflow.item.listings[index].marketplace == .facebook ? "Prepare Facebook Listing" : "Export listing package", icon: "square.and.arrow.up") { Task { await export(index, photosOnly: false) } }
                 Button("Share original photos") { Task { await export(index, photosOnly: true) } }.buttonStyle(.bordered)
-                if workflow.item.listings[index].marketplace == .ebay && workflow.services.ebay == nil { Button("Publish to eBay (mock)") { Task { await workflow.mockPublish(index) } }.buttonStyle(.bordered) }
+                if workflow.item.listings[index].marketplace == .ebay && workflow.services.ebaySetup == .notConfigured { Button("Publish to eBay (mock)") { Task { await workflow.mockPublish(index) } }.buttonStyle(.bordered) }
                 if workflow.item.listings[index].mockPublishReference != nil { Text("Mock publish recorded. No listing was posted.").font(.caption) }
             }
-            if workflow.item.listings[index].marketplace == .ebay && workflow.services.ebay != nil { EbayPublishCard(workflow: workflow, index: index) }
+            if workflow.item.listings[index].marketplace == .ebay {
+                switch workflow.services.ebaySetup {
+                case .ready: EbayPublishCard(workflow: workflow, index: index)
+                case .needsSignIn: EbayConnectCard(workflow: workflow)
+                case .notConfigured: if !EbaySetupReport.missing().isEmpty { EbaySetupCard(missing: EbaySetupReport.missing(), workflow: workflow) }
+                }
+            }
+        }
+        // eBay is available but this draft has no eBay listing: say how to get one instead of showing nothing.
+        if workflow.services.ebaySetup != .notConfigured, !workflow.item.listings.isEmpty, !workflow.item.listings.contains(where: { $0.marketplace == .ebay }) {
+            PilotCard {
+                Text("No eBay listing yet").font(.headline)
+                Text("This item only has listings for other places. Go back to Price & places, tick eBay, then tap Generate my listings.").font(.caption).foregroundStyle(.secondary)
+            }
         }
     }.sheet(item: $share) { payload in ShareSheet(items: payload.items) } }
     private func editor(_ index: Int) -> some View { PilotCard {

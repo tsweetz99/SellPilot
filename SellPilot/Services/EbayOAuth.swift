@@ -10,6 +10,12 @@ struct EbayTokens: Codable, Equatable {
     var refreshExpiry: Date?
 }
 
+/// The seller has to sign in to eBay again. The UI offers to open Settings instead of leaving a dead-end message.
+struct EbayAuthError: LocalizedError {
+    var message: String
+    var errorDescription: String? { message }
+}
+
 /// Where the seller-level access token comes from: a pasted token (testing) or a signed-in eBay connection.
 protocol EbayUserTokenSource {
     func accessToken() async throws -> String
@@ -19,7 +25,10 @@ protocol EbayUserTokenSource {
 struct StaticEbayTokenSource: EbayUserTokenSource {
     var token: String
     func accessToken() async throws -> String { token }
-    func refreshedAccessToken() async throws -> String { token }
+    /// A pasted token cannot be renewed, and retrying the same token would only fail again.
+    func refreshedAccessToken() async throws -> String {
+        throw EbayAuthError(message: "The pasted eBay Sandbox token has expired. Connect your eBay account in Settings, or paste a fresh token.")
+    }
 }
 
 /// What the seller is asked to allow, and how eBay's sign-in is addressed.
@@ -220,12 +229,12 @@ protocol WebAuthenticator {
     func disconnect() { storage.clear(); tokens = nil; status = .disconnected }
 
     func accessToken() async throws -> String {
-        guard let tokens else { throw ServiceError.invalid("Connect your eBay account in Settings first.") }
+        guard let tokens else { throw EbayAuthError(message: "Connect your eBay account in Settings first.") }
         return tokens.accessExpiry.timeIntervalSince(now()) > renewMargin ? tokens.accessToken : try await refreshedAccessToken()
     }
 
     func refreshedAccessToken() async throws -> String {
-        guard let current = tokens else { throw ServiceError.invalid("Connect your eBay account in Settings first.") }
+        guard let current = tokens else { throw EbayAuthError(message: "Connect your eBay account in Settings first.") }
         if let expiry = current.refreshExpiry, expiry <= now() { return try lost("Your eBay connection has expired. Connect eBay again.") }
         do {
             var renewed = try await exchange.refresh(refreshToken: current.refreshToken)
@@ -241,7 +250,7 @@ protocol WebAuthenticator {
 
     private func lost(_ message: String) throws -> String {
         storage.clear(); tokens = nil; status = .failed(message)
-        throw ServiceError.invalid(message)
+        throw EbayAuthError(message: message)
     }
 }
 
