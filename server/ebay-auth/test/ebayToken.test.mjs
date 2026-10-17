@@ -30,8 +30,14 @@ test("a caller cannot choose the redirect name", async () => {
   assert.match(ok.calls[0].init.body, /redirect_uri=Name-SBX-ru$/);
 });
 
-test("client credentials returns an application token with the public scope", async () => {
-  const result = await call({ environment: "sandbox", grant: "client_credentials" }, ok({ access_token: "APP", expires_in: 7200, token_type: "Application Access Token" }));
+test("application tokens are refused unless the server enables them", async () => {
+  const result = await call({ environment: "sandbox", grant: "client_credentials" }, ok({ access_token: "APP" }));
+  assert.equal(result.status, 403); assert.equal(result.body.error, "forbidden");
+  assert.equal(ok.calls.length, 0, "eBay is never contacted");
+});
+
+test("client credentials returns an application token with the public scope once enabled", async () => {
+  const result = await call({ environment: "sandbox", grant: "client_credentials" }, ok({ access_token: "APP", expires_in: 7200, token_type: "Application Access Token" }), { ...env, EBAY_ALLOW_APP_TOKENS: "true" });
   assert.equal(result.body.access_token, "APP");
   assert.equal(ok.calls[0].init.body, "grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope");
 });
@@ -58,6 +64,7 @@ test("passes eBay's errors through and never echoes secrets", async () => {
 });
 
 test("maps network and parse failures to 502", async () => {
-  assert.equal((await call({ environment: "sandbox", grant: "client_credentials" }, async () => { throw new Error("offline"); })).status, 502);
-  assert.equal((await call({ environment: "sandbox", grant: "client_credentials" }, async () => ({ ok: true, status: 200, json: async () => { throw new Error("bad json"); } }))).status, 502);
+  const enabled = { ...env, EBAY_ALLOW_APP_TOKENS: "true" };
+  assert.equal((await call({ environment: "sandbox", grant: "client_credentials" }, async () => { throw new Error("offline"); }, enabled)).status, 502);
+  assert.equal((await call({ environment: "sandbox", grant: "client_credentials" }, async () => ({ ok: true, status: 200, json: async () => { throw new Error("bad json"); } }), enabled)).status, 502);
 });

@@ -39,8 +39,8 @@ testing; the bounce page still has to be hosted either way.
 
 ## Notes
 
-- `client_credentials` is also supported by the function (application tokens for category lookup and comps). The app does not use it yet,
-  so for now the app still holds the Cert ID for those calls.
+- `client_credentials` (application tokens for category lookup and comps) is supported but **off by default**, because the function's address is public and an application token needs no seller login. Set `EBAY_ALLOW_APP_TOKENS=true` only when the app is switched over to use it. Code exchange and refresh need a valid code or refresh token, so they are not open to abuse the same way.
+- Quick health check that does not need that grant: send a refresh with a made-up token. `{"environment":"sandbox","grant":"refresh_token","refreshToken":"x"}` should answer `400 invalid_grant` (eBay accepted the server's keys and rejected the token). `401 invalid_client` means the keys are wrong; `500` means a variable is missing.
 - The function only returns the token fields the app needs, never echoes keys, takes the redirect name from its own settings (not from
   the caller), and answers 4xx/5xx with eBay's error text only.
 - Tests: `npm test` (Node 18+; no dependencies).

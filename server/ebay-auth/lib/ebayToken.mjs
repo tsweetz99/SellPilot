@@ -36,6 +36,8 @@ export async function handleEbayToken({ method, body, env, fetchImpl = fetch }) 
       pairs = [["grant_type", "refresh_token"], ["refresh_token", body.refreshToken]];
       break;
     case "client_credentials":
+      // An application token needs no seller login, so on a public address anyone could ask for one. Off unless explicitly enabled.
+      if (env.EBAY_ALLOW_APP_TOKENS !== "true") return fail(403, "forbidden", "Application tokens are not enabled on this server.");
       pairs = [["grant_type", "client_credentials"], ["scope", APP_SCOPE]];
       break;
     default:
