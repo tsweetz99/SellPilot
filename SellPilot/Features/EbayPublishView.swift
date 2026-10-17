@@ -57,3 +57,17 @@ struct EbayPublishCard: View {
         }
     } }
 }
+
+/// Shown instead of the publish section when eBay is set up but nobody is signed in, so the section never just vanishes.
+struct EbayConnectCard: View {
+    @Bindable var workflow: SellingWorkflow
+    @State private var showSettings = false
+
+    var body: some View { PilotCard {
+        Text("Publish to eBay Sandbox (test)").font(.headline)
+        Text("Connect your eBay account to publish. In Settings, tap \"Connect eBay Sandbox account\" and sign in as your sandbox seller.").font(.caption).foregroundStyle(.secondary)
+        Button { showSettings = true } label: { Label("Open Settings", systemImage: "gearshape").frame(maxWidth: .infinity).padding(12) }
+            .buttonStyle(.borderedProminent).accessibilityIdentifier("ebayOpenSettings")
+    }
+    .sheet(isPresented: $showSettings, onDismiss: { workflow.reloadServices() }) { SettingsView() } }
+}

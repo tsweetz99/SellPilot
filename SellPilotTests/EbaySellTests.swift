@@ -298,4 +298,13 @@ final class EbaySellTests: XCTestCase {
         flow.reloadServices()   // what the app does when the seller comes back from Settings
         XCTAssertNil(flow.services.ebay, "rebuilt from saved settings (none in tests)")
     }
+
+    func testPublishingSetupStatesDriveWhatTheScreenShows() {
+        var services = AppServices()
+        XCTAssertEqual(services.ebaySetup, .notConfigured, "nothing set up: the demo button stays")
+        services.ebayNeedsSignIn = true
+        XCTAssertEqual(services.ebaySetup, .needsSignIn, "set up but signed out: a Connect card, not a missing section")
+        services.ebay = FakeEbay()
+        XCTAssertEqual(services.ebaySetup, .ready)
+    }
 }
