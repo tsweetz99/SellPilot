@@ -37,7 +37,7 @@ struct PricingView: View {
             PilotCard { Text("Your asking price").font(.headline); TextField("Asking price", value: $workflow.item.askingPrice, format: .number).keyboardType(.decimalPad); Text("Check similar listings yourself and enter the price you want.").font(.caption).foregroundStyle(.secondary) }
         }
         Button { Task { await workflow.refreshMarketPrices() } } label: { Label(workflow.busy ? "Refreshing…" : "Refresh market prices", systemImage: "arrow.clockwise").frame(maxWidth: .infinity).padding(12) }
-            .buttonStyle(.bordered).disabled(workflow.busy).accessibilityIdentifier("refreshPrices")
+            .buttonStyle(.bordered).disabled(workflow.busy || workflow.item.listings.contains { $0.ebayListingID != nil }).accessibilityIdentifier("refreshPrices")
     } }
     private func explanation(_ strategy: PricingStrategy) -> String { switch strategy { case .fast: "Below recent comparable sales to attract price-sensitive buyers. A faster sale is not guaranteed."; case .recommended: "A balance between comparable sales and active competition."; case .maximize: "More room to negotiate, with potentially more time to find a buyer." } }
 }

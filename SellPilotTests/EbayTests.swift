@@ -53,7 +53,7 @@ final class EbayTests: XCTestCase {
         func param(_ name: String) -> String? { components.queryItems?.first { $0.name == name }?.value }
         XCTAssertEqual(param("q"), "DEWALT DCF887B"); XCTAssertEqual(search.value(forHTTPHeaderField: "Authorization"), "Bearer tok-1")
         XCTAssertEqual(search.value(forHTTPHeaderField: "X-EBAY-C-MARKETPLACE-ID"), "EBAY_US")
-        XCTAssertEqual(param("filter"), "buyingOptions:{FIXED_PRICE},priceCurrency:USD,conditionIds:{3000}")
+        XCTAssertEqual(param("filter"), "buyingOptions:{FIXED_PRICE},priceCurrency:USD,conditions:{USED}", "the broad USED group, because specific IDs differ by category (books have no 3000)")
     }
 
     func testTokenIsReusedAndRefreshedOnceAfterA401() async throws {
@@ -89,8 +89,9 @@ final class EbayTests: XCTestCase {
         XCTAssertEqual(EbayBrowseMarketResearchService.queries(for: item()), ["DEWALT DCF887B", "DEWALT 20V MAX XR Impact Driver"])
         XCTAssertEqual(EbayBrowseMarketResearchService.queries(for: item(brand: "Unknown", model: "X1", title: "Thing")), ["X1", "Thing"])
         XCTAssertEqual(EbayBrowseMarketResearchService.queries(for: item(model: "", title: "  Oak   table ")), ["Oak table"])
-        XCTAssertEqual(EbayBrowseMarketResearchService.conditionIDs(for: .new), "1000|1500")
-        XCTAssertEqual(EbayBrowseMarketResearchService.conditionIDs(for: .parts), "7000")
+        XCTAssertEqual(EbayBrowseMarketResearchService.conditionFilter(for: .new), "conditions:{NEW}")
+        XCTAssertEqual(EbayBrowseMarketResearchService.conditionFilter(for: .good), "conditions:{USED}")
+        XCTAssertEqual(EbayBrowseMarketResearchService.conditionFilter(for: .parts), "conditionIds:{7000}")
     }
 
     func testRejectedKeysAndMissingAccessGiveActionableMessages() async {
@@ -126,5 +127,18 @@ final class EbayTests: XCTestCase {
         XCTAssertEqual(workflow.item.workflowStep, 2, "no price yet"); XCTAssertNotNil(workflow.error)
         workflow.error = nil; workflow.item.askingPrice = 45; workflow.item.photos = [try SellItemPhoto(originalData: Data([1]))]
         await workflow.advance(); XCTAssertEqual(workflow.item.workflowStep, SellItem.lastStep); XCTAssertNil(workflow.error)
+    }
+
+    func testSearchFallsBackToNoConditionFilterWhenEbayRejectsIt() async throws {
+        var filters: [String] = []
+        EbayStub.handler = { request in
+            if request.url!.path.contains("oauth2/token") { return (200, self.tokenReply()) }
+            let filter = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!.first { $0.name == "filter" }!.value!
+            filters.append(filter)
+            return filter.contains("condition") ? (400, Data(#"{"errors":[{"message":"The filter value is invalid"}]}"#.utf8)) : (200, self.listings(["10", "12", "14", "16", "18"]))
+        }
+        let comps = try await service().research(item: item())
+        XCTAssertEqual(comps.count, 5)
+        XCTAssertEqual(filters.count, 2); XCTAssertTrue(filters[0].contains("conditions:{USED}")); XCTAssertEqual(filters[1], "buyingOptions:{FIXED_PRICE},priceCurrency:USD")
     }
 }

@@ -48,7 +48,7 @@ if status != 200:
             "   (eBay disables new Production keysets until the Marketplace Account Deletion step is completed or exempted).")
 
 url = "https://api.ebay.com/buy/browse/v1/item_summary/search?" + urllib.parse.urlencode(
-    {"q": query, "limit": 20, "filter": "buyingOptions:{FIXED_PRICE},priceCurrency:USD,conditionIds:{3000}"})
+    {"q": query, "limit": 20, "filter": "buyingOptions:{FIXED_PRICE},priceCurrency:USD,conditions:{USED}"})
 status, body = call(url, [f"Authorization: Bearer {body['access_token']}", "X-EBAY-C-MARKETPLACE-ID: EBAY_US"])
 print(f"2. Search '{query}': HTTP {status}")
 if status != 200:
