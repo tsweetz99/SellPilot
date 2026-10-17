@@ -2,24 +2,6 @@ import XCTest
 import SwiftData
 @testable import SellPilot
 
-private final class FilterStub: URLProtocol {
-    static var handler: ((URLRequest) -> (Int, Data))?
-    static var bodies: [Data] = []
-    override class func canInit(with request: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-    override func startLoading() {
-        if let stream = request.httpBodyStream {
-            stream.open(); var data = Data(); var buffer = [UInt8](repeating: 0, count: 8192)
-            while stream.hasBytesAvailable { let n = stream.read(&buffer, maxLength: buffer.count); if n <= 0 { break }; data.append(buffer, count: n) }
-            Self.bodies.append(data)
-        } else { Self.bodies.append(request.httpBody ?? Data()) }
-        let (status, data) = Self.handler!(request)
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: data); client?.urlProtocolDidFinishLoading(self)
-    }
-    override func stopLoading() {}
-}
-
 private struct StaticResearch: MarketResearchService {
     var comparables: [MarketComparable]
     func research(item: SellItem) async throws -> [MarketComparable] { comparables }
@@ -30,41 +12,19 @@ private struct StaticFilter: ComparableFilterService {
 }
 
 final class ComparableFilterTests: XCTestCase {
-    override func setUp() { FilterStub.bodies = []; FilterStub.handler = nil }
-
     private func comps(_ prices: [Double], titles: [String]? = nil) -> [MarketComparable] {
         prices.enumerated().map { MarketComparable(title: titles?[$0.offset] ?? "DeWalt DCF887B #\($0.offset)", marketplace: .ebay, price: $0.element, status: .active, condition: .good, date: Date()) }
     }
     private func item() -> SellItem {
         var item = SellItem(); item.title = "DEWALT 20V MAX XR Impact Driver"; item.brand = "DEWALT"; item.model = "DCF887B"; item.sellerNotes = "Tool only, no battery."; return item
     }
-    private func filter() -> ClaudeComparableFilter {
-        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [FilterStub.self]
-        return ClaudeComparableFilter(configuration: .init(apiKey: "k", retryDelay: .milliseconds(1)), session: URLSession(configuration: config))
-    }
-    private func reply(_ input: [String: Any]) -> Data {
-        try! JSONSerialization.data(withJSONObject: ["content": [["type": "tool_use", "name": "report_matches", "input": input]]])
-    }
-
-    func testRequestListsNumberedTitlesAndTheSellersConfigurationWithoutPhotos() async throws {
-        FilterStub.handler = { _ in (200, self.reply(["matching_indexes": [0, 2, 99, 2, -1], "notes": "x"])) }
-        let titles = ["Kit with battery", "Bare tool", "Charger only"]
-        let indexes = try await filter().matchingIndexes(in: comps([100, 45, 20], titles: titles), for: item())
-        XCTAssertEqual(indexes, [0, 2], "out-of-range and duplicate indexes are ignored")
-        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: FilterStub.bodies[0]) as? [String: Any])
-        XCTAssertEqual(body["model"] as? String, "claude-haiku-4-5-20251001"); XCTAssertEqual((body["tool_choice"] as? [String: String])?["type"], "auto")
-        let text = try XCTUnwrap(((body["messages"] as? [[String: Any]])?.first?["content"]) as? String)
-        XCTAssertTrue(text.contains("0. Kit with battery")); XCTAssertTrue(text.contains("1. Bare tool")); XCTAssertTrue(text.contains("Tool only, no battery."))
-        XCTAssertTrue(text.contains("DCF887B")); XCTAssertFalse(text.contains("$"), "prices are not sent, so they cannot bias matching")
-    }
-
     func testWrapperKeepsOnlyConfirmedListingsAndMarksThemVerified() async throws {
         let all = comps([100, 45, 20, 50, 48, 120])
         let service = FilteredMarketResearchService(base: StaticResearch(comparables: all), filter: StaticFilter(result: .success([1, 3, 4])))
         let result = try await service.research(item: item())
         XCTAssertEqual(result.map(\.price), [45, 50, 48]); XCTAssertTrue(result.allSatisfy { $0.verifiedMatch == true })
         let pricing = try await AskingPricePricingService().analyze(item: item(), comparables: result)
-        XCTAssertTrue(pricing.dataSourceSummary.contains("same model and configuration"))
+        XCTAssertTrue(pricing.dataSourceSummary.contains("matched to your item"))
     }
 
     func testWrapperFallsBackToUnverifiedWhenTooFewMatchOrTheFilterFails() async throws {
@@ -77,9 +37,52 @@ final class ComparableFilterTests: XCTestCase {
         }
     }
 
-    func testUnreadableFilterReplyThrows() async {
-        FilterStub.handler = { _ in (200, Data(#"{"content":[{"type":"text","text":"hi"}]}"#.utf8)) }
-        do { _ = try await filter().matchingIndexes(in: comps([1, 2, 3]), for: item()); XCTFail() } catch { XCTAssertTrue(error.localizedDescription.contains("could not be read")) }
+    // MARK: Title rules (no AI)
+
+    private func bareItem() -> SellItem { var item = SellItem(); item.title = "DEWALT 20V MAX XR Impact Driver"; item.brand = "DEWALT"; item.model = "DCF887B"; item.sellerNotes = "Tool only, no battery."; return item }
+    private func titles(_ t: [String]) -> [MarketComparable] { comps(t.map { _ in 10 }, titles: t) }
+
+    func testTitleFilterKeepsTheSameModelInTheSameConfiguration() async throws {
+        let listings = titles([
+            "DeWalt DCF887B 20V Impact Driver (Tool Only)",                 // 0 keep
+            "DEWALT DCF887 20V 1/4\" Impact Driver w/ Battery and Charger", // 1 kit, seller has the bare tool
+            "DEWALT DCF887D2 Impact Driver Kit 2 batteries",                 // 2 kit
+            "DEWALT DCF887B Replacement Battery Charger only",               // 3 accessory
+            "DeWalt DCF887B for parts not working",                          // 4 parts
+            "Lot of 3 DeWalt DCF887B impact drivers",                        // 5 lot
+            "DeWalt DCF840 Impact Driver bare tool",                         // 6 different model
+            "Dewalt DCF-887-B bare tool",                                    // 7 keep (punctuation differs)
+            "DEWALT DCF887B Brushless Impact Driver",                        // 8 keep (config not stated)
+        ])
+        let matches = try await TitleComparableFilter().matchingIndexes(in: listings, for: bareItem())
+        XCTAssertEqual(matches, [0, 7, 8])
+    }
+
+    func testTitleFilterFollowsTheSellersConfigurationBothWays() async throws {
+        var kitItem = bareItem(); kitItem.sellerNotes = "Comes with battery and charger in a kit."
+        let listings = titles(["DEWALT DCF887B Impact Driver (Tool Only)", "DEWALT DCF887 Impact Driver Kit with Battery and Charger", "DEWALT DCF887B Impact Driver"])
+        let matches = try await TitleComparableFilter().matchingIndexes(in: listings, for: kitItem)
+        XCTAssertEqual(matches, [1, 2], "a seller with the kit does not compare against bare tools")
+        var parts = bareItem(); parts.condition = .parts
+        let broken = try await TitleComparableFilter().matchingIndexes(in: titles(["DeWalt DCF887B for parts only", "DeWalt DCF887B tool only"]), for: parts)
+        XCTAssertEqual(broken, [0, 1], "an item for parts is compared with other parts listings")
+    }
+
+    func testWithoutAModelNumberListingsMustShareMostOfTheItemsWords() async throws {
+        var item = SellItem(); item.title = "Oak side table"; item.brand = ""
+        let matches = try await TitleComparableFilter().matchingIndexes(in: titles(["Solid oak side table vintage", "Oak coffee table", "Pine side table", "Oak Side Table with drawer"]), for: item)
+        XCTAssertEqual(matches, [0, 3])
+        var short = SellItem(); short.title = "Chair"
+        let everything = try await TitleComparableFilter().matchingIndexes(in: titles(["Anything", "Else"]), for: short)
+        XCTAssertEqual(everything, [0, 1], "too little to judge by, so nothing is excluded")
+    }
+
+    func testModelKeysAllowTheSuffixVariantButNotShortCodes() {
+        XCTAssertEqual(TitleComparableFilter.modelKeys("DCF887B"), ["dcf887b", "dcf887"])
+        XCTAssertEqual(TitleComparableFilter.modelKeys("2804-20"), ["280420"])
+        XCTAssertEqual(TitleComparableFilter.modelKeys("X1"), [])
+        XCTAssertEqual(TitleComparableFilter.modelKeys("Unknown"), [])
+        XCTAssertTrue(ItemConfiguration(text: "Tool Only").bare); XCTAssertTrue(ItemConfiguration(text: "3 pack of pens").lot); XCTAssertFalse(ItemConfiguration(text: "Blotter paper").lot)
     }
 
     private struct SwitchableResearch: MarketResearchService {

@@ -85,7 +85,7 @@ import Observation
 
     @MainActor func reloadServices() { services = AppServices.make() }
 
-    /// Suggests an eBay category and pre-fills its required item specifics from what we know (and Claude, when configured).
+    /// Suggests an eBay category and pre-fills its required item specifics from what we know (and facts Claude extracts from the seller's own description, when configured).
     func prepareEbayListing(_ index: Int) async {
         guard let ebay = services.ebay, item.listings.indices.contains(index), !busy else { return }
         busy = true; defer { busy = false }
@@ -112,10 +112,9 @@ import Observation
     private func applyEbayCategory(_ category: EbayCategory, index: Int, using ebay: any EbayListingService) async throws {
         let aspects = try await ebay.aspects(for: category.id)
         var specifics = EbaySpecifics.prefill(item: item, existing: item.listings[index].itemSpecifics, aspects: aspects)
-        let unfilled = aspects.filter { $0.required && !EbaySpecifics.missing([$0], in: specifics).isEmpty }
-        if !unfilled.isEmpty, let filler = services.specifics, let values = try? await filler.fill(item: item, aspects: unfilled) {
-            for (name, value) in values where !EbaySpecifics.missing(unfilled.filter { $0.name == name }, in: specifics).isEmpty { specifics[name] = value }
-        }
+        // Claude only sees the seller's own description; matching to eBay's names and allowed values happens here, on the device.
+        let facts = (try? await services.specifics?.facts(for: item)) ?? [:]
+        specifics = EbaySpecifics.fill(aspects: aspects, existing: specifics, facts: facts, item: item)
         ebayAspects = aspects
         item.listings[index].ebayCategoryID = category.id; item.listings[index].ebayCategoryName = category.name
         item.listings[index].ebayRequiredSpecifics = aspects.filter(\.required).map(\.name)

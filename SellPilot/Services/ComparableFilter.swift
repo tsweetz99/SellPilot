@@ -21,69 +21,55 @@ struct FilteredMarketResearchService: MarketResearchService {
     }
 }
 
-struct ClaudeComparableFilter: ComparableFilterService {
-    struct Configuration {
-        var apiKey: String
-        var endpoint = ClaudeAPI.defaultEndpoint
-        /// Classifying titles is simple, so a small fast model is enough.
-        var model = "claude-haiku-4-5-20251001"
-        var maxListings = 50
-        var timeout: TimeInterval = 45
-        var retryDelay: Duration = .seconds(2)
-    }
-    var configuration: Configuration
-    var session: URLSession = .shared
-
-    private static let toolName = "report_matches"
-
-    private static let systemPrompt = """
-    You help a seller price a second-hand item by choosing which marketplace listings are truly comparable to it. \
-    Keep a listing only if it is the same product (same brand and model) in the same configuration as the seller's item. \
-    Configuration means what is included and which variant it is: for example bare tool versus kit with battery and charger, \
-    capacity, size, color or generation where they differ materially. \
-    Exclude: different models; accessories, parts, cases or batteries sold alone; lots, bundles and multiples; kits when the seller has the bare item (and the reverse); \
-    items listed as broken or for parts when the seller's item works. \
-    Infer the seller's configuration from the title, model number (for example a trailing B often means bare tool), condition notes and seller notes. \
-    If the configuration is unclear, keep listings that match the model number exactly and exclude clearly different bundles. \
-    Judge only from the titles. Answer by calling the report_matches tool.
-    """
-
-    private static var toolSchema: [String: Any] {
-        ["type": "object",
-         "properties": [
-            "matching_indexes": ["type": "array", "items": ["type": "integer"], "description": "Numbers of the listings that match the seller's item."],
-            "notes": ["type": "string", "description": "One short sentence on what you excluded and why."],
-         ],
-         "required": ["matching_indexes"]]
-    }
-
-    func makeRequest(comparables: [MarketComparable], item: SellItem) throws -> URLRequest {
-        func line(_ label: String, _ value: String) -> String? { value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : "\(label): \(value)" }
-        let description = [line("Title", item.title), line("Brand", item.brand), line("Model", item.model), line("Category", item.category),
-                           line("Condition", item.condition.rawValue), line("Condition notes", item.conditionNotes), line("Seller notes", item.sellerNotes),
-                           line("Identification details", (item.identification?.recognizedAttributes ?? [:]).sorted { $0.key < $1.key }.map { "\($0.key): \($0.value)" }.joined(separator: "; "))]
-            .compactMap { $0 }.joined(separator: "\n")
-        let titles = comparables.prefix(configuration.maxListings).enumerated().map { "\($0.offset). \($0.element.title)" }.joined(separator: "\n")
-        let body: [String: Any] = [
-            "model": configuration.model,
-            "max_tokens": 1000,
-            "system": Self.systemPrompt,
-            "tools": [["name": Self.toolName, "description": "Report which listings match the seller's item.", "input_schema": Self.toolSchema]],
-            "tool_choice": ["type": "auto"],
-            "messages": [["role": "user", "content": "Seller's item:\n\(description)\n\nCandidate listings:\n\(titles)\n\nCall report_matches with the numbers of the matching listings."]],
-        ]
-        return try ClaudeAPI.request(endpoint: configuration.endpoint, apiKey: configuration.apiKey, timeout: configuration.timeout, body: body)
-    }
-
-    private struct Payload: Decodable { var matching_indexes: [Int] }
+/// Matches listing titles to the seller's item with plain rules. eBay's listing data never leaves the device for this:
+/// eBay's API terms restrict feeding its content to AI tools, so this step deliberately uses no AI.
+struct TitleComparableFilter: ComparableFilterService {
+    private static let stopWords: Set<String> = ["the", "and", "with", "for", "new", "used", "set", "of", "in", "a", "an", "by", "to", "free", "shipping"]
 
     func matchingIndexes(in comparables: [MarketComparable], for item: SellItem) async throws -> Set<Int> {
-        guard !comparables.isEmpty else { return [] }
-        let data = try await ClaudeAPI.send(try makeRequest(comparables: comparables, item: item), session: session, retryDelay: configuration.retryDelay)
-        guard let input = ClaudeAPI.toolInput(named: Self.toolName, in: data), let payload = try? JSONDecoder().decode(Payload.self, from: input) else {
-            throw ServiceError.invalid("The listing filter result could not be read.")
+        let seller = ItemConfiguration(text: ItemConfiguration.sellerText(for: item))
+        let keys = Self.modelKeys(item.model)
+        let words = Self.significantWords(item)
+        var matches = Set<Int>()
+        for (index, comparable) in comparables.enumerated() {
+            guard keys.isEmpty ? Self.coversWords(comparable.title, words: words) : Self.titleHasModel(comparable.title, keys: keys) else { continue }
+            let listing = ItemConfiguration(text: comparable.title)
+            if listing.accessoryOnly && !seller.accessoryOnly { continue }
+            if listing.forParts && !(seller.forParts || item.condition == .parts) { continue }
+            if listing.lot && !seller.lot { continue }
+            if seller.bare && listing.kit && !listing.bare { continue }
+            if seller.kit && listing.bare && !listing.kit { continue }
+            matches.insert(index)
         }
-        let limit = min(comparables.count, configuration.maxListings)
-        return Set(payload.matching_indexes.filter { (0..<limit).contains($0) })
+        return matches
+    }
+
+    /// The model as typed, and without a trailing letter (DCF887B also covers DCF887).
+    static func modelKeys(_ model: String) -> [String] {
+        let compact = TitleText.compact(model)
+        guard compact.count >= 3, compact != "unknown" else { return [] }
+        var keys = [compact]
+        if compact.count >= 5, let last = compact.last, last.isLetter, compact.dropLast().contains(where: \.isNumber) { keys.append(String(compact.dropLast())) }
+        return keys
+    }
+
+    static func titleHasModel(_ title: String, keys: [String]) -> Bool {
+        let tokens = TitleText.tokens(title), compact = tokens.joined()
+        return keys.contains { key in
+            tokens.contains { $0 == key || ($0.hasPrefix(key) && $0.count - key.count <= 2) } || (key.count >= 6 && compact.contains(key))
+        }
+    }
+
+    static func significantWords(_ item: SellItem) -> [String] {
+        let brand = item.brand.lowercased() == "unknown" ? "" : item.brand
+        var seen = Set<String>()
+        return TitleText.tokens("\(item.title) \(brand)").filter { $0.count >= 3 && !stopWords.contains($0) && seen.insert($0).inserted }
+    }
+
+    /// Without a model number, a listing must contain at least three quarters of the item's own distinguishing words.
+    static func coversWords(_ title: String, words: [String]) -> Bool {
+        guard words.count >= 2 else { return true }
+        let present = Set(TitleText.tokens(title))
+        return words.filter { present.contains($0) }.count >= Int((Double(words.count) * 0.75).rounded(.up))
     }
 }

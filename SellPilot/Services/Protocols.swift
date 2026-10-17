@@ -62,8 +62,7 @@ extension AppServices {
         }
         if !testing, let tokens = appTokens(.production, direct: EbayCredentials.load()) {
             let ebay = EbayBrowseMarketResearchService(configuration: .init(credentials: EbayCredentials.load()), appTokens: tokens)
-            if let key = APIKeyStore.load() { services.research = FilteredMarketResearchService(base: ebay, filter: ClaudeComparableFilter(configuration: .init(apiKey: key))) }
-            else { services.research = ebay }
+            services.research = FilteredMarketResearchService(base: ebay, filter: TitleComparableFilter())
             services.pricing = AskingPricePricingService()
         }
         let sandboxCredentials = APIKeyStore.load(.ebaySandboxAppID).flatMap { app in APIKeyStore.load(.ebaySandboxCertID).map { EbayCredentials(appID: app, certID: $0) } }
@@ -75,7 +74,7 @@ extension AppServices {
             }()
             if let seller {
                 services.ebay = EbaySellService(configuration: .init(environment: .sandbox, credentials: sandboxCredentials, tokens: seller), appTokens: tokens)
-                if let key = APIKeyStore.load() { services.specifics = ClaudeSpecificsFiller(configuration: .init(apiKey: key)) }
+                if let key = APIKeyStore.load() { services.specifics = ClaudeItemFactsService(configuration: .init(apiKey: key)) }
             } else if EbayConnections.make(.sandbox) != nil {
                 services.ebayNeedsSignIn = true   // everything is configured except the sign-in itself
             }

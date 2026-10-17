@@ -11,12 +11,15 @@ enum EbaySellEnvironment: String, Codable {
 struct EbayCategory: Equatable, Identifiable { var id: String; var name: String; var path: String }
 struct EbayAspect: Equatable {
     var name: String; var required: Bool; var selectionOnly: Bool; var multiValue: Bool; var values: [String]
-    /// The allowed value matching `value` ignoring case, if the aspect restricts values; otherwise `value` itself.
+    /// The allowed value matching `value` ignoring case, spacing and punctuation ("20 V" matches "20V"), if the aspect
+    /// restricts values; otherwise `value` itself.
     func normalized(_ value: String) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         guard selectionOnly else { return trimmed }
-        return values.first { $0.caseInsensitiveCompare(trimmed) == .orderedSame }
+        if let exact = values.first(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) { return exact }
+        let key = TitleText.compact(trimmed)
+        return key.isEmpty ? nil : values.first { TitleText.compact($0) == key }
     }
 }
 struct EbayPublishResult: Equatable { var offerID: String; var listingID: String; var url: URL }
@@ -29,9 +32,9 @@ protocol EbayListingService {
     func withdraw(offerID: String) async throws
 }
 
-/// Fills eBay item specifics from what is known about the item. Returns only values it is confident about.
+/// Generic facts about the item taken from the seller's own description (never from eBay data).
 protocol ItemSpecificsService {
-    func fill(item: SellItem, aspects: [EbayAspect]) async throws -> [String: String]
+    func facts(for item: SellItem) async throws -> [String: String]
 }
 
 enum EbaySpecifics {
@@ -50,6 +53,30 @@ enum EbaySpecifics {
             if let value = aspect.normalized(known) { result[aspect.name] = value }
         }
         return result
+    }
+
+    /// Fills still-empty required aspects on the device: the battery question from the seller's wording, the rest by matching
+    /// the item's facts to the aspect's name and eBay's allowed values. eBay's lists are never sent to an AI.
+    static func fill(aspects: [EbayAspect], existing: [String: String], facts: [String: String], item: SellItem) -> [String: String] {
+        var result = existing
+        let configuration = ItemConfiguration(text: ItemConfiguration.sellerText(for: item))
+        func isFilled(_ aspect: EbayAspect) -> Bool { !(result.first { $0.key.caseInsensitiveCompare(aspect.name) == .orderedSame }?.value ?? "").trimmingCharacters(in: .whitespaces).isEmpty }
+        let keyed = Dictionary(facts.map { (TitleText.compact($0.key), $0.value) }, uniquingKeysWith: { first, _ in first })
+        for aspect in aspects where aspect.required && !isFilled(aspect) {
+            let name = TitleText.compact(aspect.name)
+            var raw: String?
+            if name.contains("battery") && name.contains("include") { raw = configuration.bare ? "No" : (configuration.kit ? "Yes" : nil) }
+            raw = raw ?? keyed[name] ?? keyed.first { key, _ in key.count >= 3 && (name.contains(key) || key.contains(name)) }?.value
+            guard let raw, let value = aspect.normalized(raw) ?? yesNo(raw, for: aspect) else { continue }
+            result[aspect.name] = value
+        }
+        return result
+    }
+
+    private static func yesNo(_ raw: String, for aspect: EbayAspect) -> String? {
+        let text = TitleText.normalize(raw)
+        let yes = ["yes", "true", "y", "included", "includes"], no = ["no", "false", "n", "not included", "none", "excluded"]
+        return yes.contains(text) ? aspect.normalized("Yes") : no.contains(text) ? aspect.normalized("No") : nil
     }
 
     static func missing(_ aspects: [EbayAspect], in specifics: [String: String]) -> [String] {

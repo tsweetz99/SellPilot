@@ -196,7 +196,7 @@ final class EbaySellTests: XCTestCase {
         func publish(draft: ListingDraft, photos: [SellItemPhoto], conditionNotes: String) async throws -> EbayPublishResult { if let failure { throw failure }; published.append(draft); return EbayPublishResult(offerID: "O", listingID: "L", url: URL(string: "https://sandbox.ebay.com/itm/L")!) }
         func withdraw(offerID: String) async throws {}
     }
-    private struct FakeSpecifics: ItemSpecificsService { func fill(item: SellItem, aspects: [EbayAspect]) async throws -> [String: String] { ["Voltage": "20V"] } }
+    private struct FakeSpecifics: ItemSpecificsService { func facts(for item: SellItem) async throws -> [String: String] { ["voltage": "20V"] } }
 
     /// The store must outlive the workflow, or SwiftData crashes on save.
     private var containers: [ModelContainer] = []
@@ -237,19 +237,37 @@ final class EbaySellTests: XCTestCase {
         await flow.endEbayListing(0); XCTAssertNil(flow.item.listings[0].ebayListingID)
     }
 
-    // MARK: Specifics filler
+    // MARK: Item facts (the only AI step for item specifics; it sees nothing from eBay)
 
-    func testSpecificsFillerListsAllowedValuesAndDropsInvalidAnswers() async throws {
-        SellStub.route = { _, _ in Reply(body: ["content": [["type": "tool_use", "name": "report_specifics", "input": ["values": [["name": "Battery Included", "value": "no"], ["name": "Voltage", "value": "20V"], ["name": "Color", "value": "Chartreuse"], ["name": "Brand", "value": NSNull()]]]]]]) }
-        let aspects = [EbayAspect(name: "Battery Included", required: true, selectionOnly: true, multiValue: false, values: ["Yes", "No"]), EbayAspect(name: "Voltage", required: true, selectionOnly: false, multiValue: false, values: []),
-                       EbayAspect(name: "Color", required: true, selectionOnly: true, multiValue: false, values: ["Black"]), EbayAspect(name: "Brand", required: true, selectionOnly: false, multiValue: false, values: [])]
+    func testFactsServiceSendsOnlyTheSellersDescriptionAndReturnsGenericFacts() async throws {
+        SellStub.route = { _, _ in Reply(body: ["content": [["type": "tool_use", "name": "report_facts", "input": ["voltage": "20V", "battery_included": "no", "color": NSNull(), "material": "unknown", "other": ["Chuck Size": "1/4 in", "Empty": ""]]]]]) }
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [SellStub.self]
         var item = SellItem(); item.title = "DEWALT DCF887B"; item.sellerNotes = "Tool only"
-        let result = try await ClaudeSpecificsFiller(configuration: .init(apiKey: "k"), session: URLSession(configuration: config)).fill(item: item, aspects: aspects)
-        XCTAssertEqual(result, ["Battery Included": "No", "Voltage": "20V"])
+        let result = try await ClaudeItemFactsService(configuration: .init(apiKey: "k"), session: URLSession(configuration: config)).facts(for: item)
+        XCTAssertEqual(result, ["voltage": "20V", "battery_included": "no", "chuck_size": "1/4 in"])
         let body = try XCTUnwrap(JSONSerialization.jsonObject(with: SellStub.log[0].body) as? [String: Any])
         let prompt = try XCTUnwrap(((body["messages"] as? [[String: Any]])?.first?["content"]) as? String)
-        XCTAssertTrue(prompt.contains("Battery Included (allowed: Yes | No)")); XCTAssertTrue(prompt.contains("Tool only")); XCTAssertEqual(body["model"] as? String, "claude-haiku-4-5-20251001")
+        XCTAssertTrue(prompt.contains("Tool only")); XCTAssertTrue(prompt.contains("DCF887B"))
+        XCTAssertFalse(prompt.lowercased().contains("allowed"), "no eBay allowed-value lists are sent")
+        XCTAssertEqual(body["model"] as? String, "claude-haiku-4-5-20251001")
+    }
+
+    func testFactsAreMatchedToEbayAspectsOnTheDevice() {
+        let aspects = [EbayAspect(name: "Battery Included", required: true, selectionOnly: true, multiValue: false, values: ["Yes", "No"]),
+                       EbayAspect(name: "Voltage", required: true, selectionOnly: true, multiValue: false, values: ["18V", "20V", "12V"]),
+                       EbayAspect(name: "Product Type", required: true, selectionOnly: false, multiValue: false, values: []),
+                       EbayAspect(name: "Color", required: true, selectionOnly: true, multiValue: false, values: ["Black", "Yellow"]),
+                       EbayAspect(name: "Brand", required: true, selectionOnly: false, multiValue: false, values: [])]
+        var item = SellItem(); item.brand = "DEWALT"; item.title = "DEWALT impact driver"; item.sellerNotes = "Tool only."
+        let facts = ["voltage": "20 V", "type": "Impact driver", "color": "Chartreuse", "battery_included": "yes"]
+        let filled = EbaySpecifics.fill(aspects: aspects, existing: ["Brand": "DEWALT"], facts: facts, item: item)
+        XCTAssertEqual(filled["Battery Included"], "No", "the seller's own wording beats a guessed fact")
+        XCTAssertEqual(filled["Voltage"], "20V", "punctuation and spacing do not matter")
+        XCTAssertEqual(filled["Product Type"], "Impact driver", "a fact named Type fills Product Type")
+        XCTAssertNil(filled["Color"], "a value eBay does not allow is left for the seller")
+        XCTAssertEqual(filled["Brand"], "DEWALT", "existing values are kept")
+        item.sellerNotes = ""
+        XCTAssertEqual(EbaySpecifics.fill(aspects: [aspects[0]], existing: [:], facts: ["battery_included": "yes"], item: item)["Battery Included"], "Yes", "yes/no facts map to eBay's Yes/No")
     }
 
     private struct RotatingTokens: EbayUserTokenSource {
