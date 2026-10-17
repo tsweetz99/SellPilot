@@ -170,10 +170,10 @@ final class EbayOAuthTests: XCTestCase {
         do { _ = try await conn.refreshedAccessToken(); XCTFail() } catch { XCTAssertEqual(error.localizedDescription, "No internet connection.") }
         XCTAssertEqual(conn.status, .connected); XCTAssertNotNil(storage.stored, "a network failure keeps the connection")
         exchange.refreshResult = .failure(.invalid("Your eBay connection has expired. Connect eBay again."))
-        do { _ = try await conn.refreshedAccessToken(); XCTFail() } catch { XCTAssertTrue(error.localizedDescription.contains("Connect eBay again")) }
+        do { _ = try await conn.refreshedAccessToken(); XCTFail() } catch { XCTAssertTrue(error.localizedDescription.contains("Connect eBay again")); XCTAssertTrue(error is EbayAuthError, "the UI offers to open Settings") }
         XCTAssertNil(storage.stored); XCTAssertFalse(conn.isConnected)
         if case .failed = conn.status {} else { XCTFail("expected failed status") }
-        do { _ = try await conn.accessToken(); XCTFail() } catch { XCTAssertTrue(error.localizedDescription.contains("Connect your eBay account")) }
+        do { _ = try await conn.accessToken(); XCTFail() } catch { XCTAssertTrue(error.localizedDescription.contains("Connect your eBay account")); XCTAssertTrue(error is EbayAuthError) }
     }
 
     @MainActor func testDisconnectForgetsTheTokens() async throws {

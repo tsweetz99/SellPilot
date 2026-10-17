@@ -10,7 +10,10 @@ import Observation
     /// eBay category suggestions and the chosen category's item specifics, used by the publish card.
     var ebayCategoryChoices: [EbayCategory] = []
     var ebayAspects: [EbayAspect] = []
-    let services: AppServices
+    /// True when the last eBay failure means the seller must sign in again; the alert then offers to open Settings.
+    var reconnectNeeded = false
+    /// Rebuilt after the seller reconnects eBay in Settings, so a fresh sign-in is picked up without reopening the item.
+    var services: AppServices
     let store: ItemStore
     init(item: SellItem, store: ItemStore, services: AppServices) { self.item = item; self.store = store; self.services = services }
     @discardableResult func save() -> Bool { let saved = store.save(item); if !saved { error = store.error }; return saved }
@@ -78,6 +81,10 @@ import Observation
 
     // MARK: eBay publishing
 
+    private func report(_ failure: Error) { error = failure.localizedDescription; reconnectNeeded = failure is EbayAuthError }
+
+    @MainActor func reloadServices() { services = AppServices.make() }
+
     /// Suggests an eBay category and pre-fills its required item specifics from what we know (and Claude, when configured).
     func prepareEbayListing(_ index: Int) async {
         guard let ebay = services.ebay, item.listings.indices.contains(index), !busy else { return }
@@ -87,13 +94,13 @@ import Observation
             guard let first = choices.first else { throw ServiceError.invalid("eBay found no category for this item. Try a clearer product name.") }
             ebayCategoryChoices = choices
             try await applyEbayCategory(first, index: index, using: ebay)
-        } catch { self.error = error.localizedDescription }
+        } catch { report(error) }
     }
 
     func chooseEbayCategory(_ category: EbayCategory, index: Int) async {
         guard let ebay = services.ebay, item.listings.indices.contains(index), !busy else { return }
         busy = true; defer { busy = false }
-        do { try await applyEbayCategory(category, index: index, using: ebay) } catch { self.error = error.localizedDescription }
+        do { try await applyEbayCategory(category, index: index, using: ebay) } catch { report(error) }
     }
 
     /// Reloads the allowed item specifics for a draft whose category was already chosen (after reopening the app).
@@ -137,7 +144,7 @@ import Observation
             if ebay.environment == .production { item.status = .active }
             save()
             notice = ebay.environment == .sandbox ? "Test listing created in the eBay Sandbox. Nothing was posted to real eBay." : "Your listing is live on eBay."
-        } catch { self.error = error.localizedDescription }
+        } catch { report(error) }
     }
 
     func endEbayListing(_ index: Int) async {
@@ -147,7 +154,7 @@ import Observation
             try await ebay.withdraw(offerID: offerID)
             item.listings[index].ebayListingID = nil; item.listings[index].ebayListingURL = nil
             save(); notice = "The eBay listing was ended."
-        } catch { self.error = error.localizedDescription }
+        } catch { report(error) }
     }
 
     func apply(_ match: ProductMatch) { item.title = match.title; item.brand = match.brand; item.model = match.model; item.category = match.category }

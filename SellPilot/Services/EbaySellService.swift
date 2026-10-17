@@ -120,13 +120,13 @@ struct EbaySellService: EbayListingService {
     private func errorIDs(_ data: Data) -> [Int] { (object(data)["errors"] as? [[String: Any]])?.compactMap { $0["errorId"] as? Int } ?? [] }
 
     /// Turns an eBay failure into a message the seller can act on.
-    static func failure(_ status: Int, _ data: Data) -> ServiceError {
+    static func failure(_ status: Int, _ data: Data) -> Error {
         let errors = (((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["errors"] as? [[String: Any]]) ?? []
         let messages = errors.compactMap { $0["message"] as? String }
-        if status == 401 || errors.contains(where: { $0["errorId"] as? Int == 1001 }) { return .invalid("Your eBay sign-in has expired. Reconnect eBay in Settings.") }
-        if status == 403 { return .invalid("eBay says this account isn't allowed to do that" + (messages.first.map { ": \($0)" } ?? ".")) }
-        if messages.isEmpty { return .invalid("eBay request failed (\(status)).") }
-        return .invalid("eBay: " + messages.prefix(3).joined(separator: " "))
+        if status == 401 || errors.contains(where: { $0["errorId"] as? Int == 1001 }) { return EbayAuthError(message: "Your eBay sign-in has expired. Reconnect eBay in Settings.") }
+        if status == 403 { return ServiceError.invalid("eBay says this account isn't allowed to do that" + (messages.first.map { ": \($0)" } ?? ".")) }
+        if messages.isEmpty { return ServiceError.invalid("eBay request failed (\(status)).") }
+        return ServiceError.invalid("eBay: " + messages.prefix(3).joined(separator: " "))
     }
 
     private func expect(_ allowed: Set<Int>, _ result: (Data, HTTPURLResponse)) throws -> Data {
