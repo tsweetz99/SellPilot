@@ -7,10 +7,14 @@ enum APIKeyStore {
     enum Account: String {
         case anthropic = "api-key", ebayAppID = "ebay-app-id", ebayCertID = "ebay-cert-id"
         case ebaySandboxAppID = "ebay-sandbox-app-id", ebaySandboxCertID = "ebay-sandbox-cert-id", ebaySandboxUserToken = "ebay-sandbox-user-token"
+        case ebaySandboxRuName = "ebay-sandbox-runame", ebayRuName = "ebay-runame", ebayAuthProxy = "ebay-auth-proxy"
+        case ebaySandboxOAuthTokens = "ebay-sandbox-oauth-tokens", ebayOAuthTokens = "ebay-oauth-tokens"
         /// Debug builds also read these environment variables (set them in the Xcode scheme).
         var environmentName: String {
             switch self { case .anthropic: "SELLPILOT_ANTHROPIC_API_KEY"; case .ebayAppID: "SELLPILOT_EBAY_APP_ID"; case .ebayCertID: "SELLPILOT_EBAY_CERT_ID"
-            case .ebaySandboxAppID: "SELLPILOT_EBAY_SANDBOX_APP_ID"; case .ebaySandboxCertID: "SELLPILOT_EBAY_SANDBOX_CERT_ID"; case .ebaySandboxUserToken: "SELLPILOT_EBAY_SANDBOX_USER_TOKEN" }
+            case .ebaySandboxAppID: "SELLPILOT_EBAY_SANDBOX_APP_ID"; case .ebaySandboxCertID: "SELLPILOT_EBAY_SANDBOX_CERT_ID"; case .ebaySandboxUserToken: "SELLPILOT_EBAY_SANDBOX_USER_TOKEN"
+            case .ebaySandboxRuName: "SELLPILOT_EBAY_SANDBOX_RUNAME"; case .ebayRuName: "SELLPILOT_EBAY_RUNAME"; case .ebayAuthProxy: "SELLPILOT_EBAY_AUTH_PROXY"
+            case .ebaySandboxOAuthTokens: "SELLPILOT_EBAY_SANDBOX_OAUTH_TOKENS"; case .ebayOAuthTokens: "SELLPILOT_EBAY_OAUTH_TOKENS" }
         }
     }
 
