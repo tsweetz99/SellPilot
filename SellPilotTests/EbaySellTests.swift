@@ -33,7 +33,11 @@ final class EbaySellTests: XCTestCase {
 
     private func service(_ environment: EbaySellEnvironment = .sandbox) -> EbaySellService {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [SellStub.self]
-        return EbaySellService(configuration: .init(environment: environment, credentials: .init(appID: "app", certID: "cert"), userToken: "user-token"), session: URLSession(configuration: config))
+        return EbaySellService(configuration: .init(environment: environment, credentials: .init(appID: "app", certID: "cert"), tokens: StaticEbayTokenSource(token: "user-token")), session: URLSession(configuration: config))
+    }
+    private func service(tokens: any EbayUserTokenSource) -> EbaySellService {
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [SellStub.self]
+        return EbaySellService(configuration: .init(environment: .sandbox, credentials: .init(appID: "app", certID: "cert"), tokens: tokens), session: URLSession(configuration: config))
     }
     private func draft(category: String? = "168134") throws -> (ListingDraft, [SellItemPhoto]) {
         let photo = try SellItemPhoto(originalData: try XCTUnwrap(PhotoImport.normalized(PhotoImport.demoPhoto())))
@@ -245,5 +249,25 @@ final class EbaySellTests: XCTestCase {
         let body = try XCTUnwrap(JSONSerialization.jsonObject(with: SellStub.log[0].body) as? [String: Any])
         let prompt = try XCTUnwrap(((body["messages"] as? [[String: Any]])?.first?["content"]) as? String)
         XCTAssertTrue(prompt.contains("Battery Included (allowed: Yes | No)")); XCTAssertTrue(prompt.contains("Tool only")); XCTAssertEqual(body["model"] as? String, "claude-haiku-4-5-20251001")
+    }
+
+    private struct RotatingTokens: EbayUserTokenSource {
+        func accessToken() async throws -> String { "old-token" }
+        func refreshedAccessToken() async throws -> String { "new-token" }
+    }
+
+    func testARejectedSellerTokenIsRefreshedAndTheCallRetriedOnce() async throws {
+        SellStub.route = { request, body in
+            let bearer = request.value(forHTTPHeaderField: "Authorization") ?? ""
+            if request.url!.path.hasPrefix("/sell/"), bearer == "Bearer old-token" { return Reply(status: 401, body: ["errors": [["errorId": 1001, "message": "Invalid access token"]]]) }
+            return self.happyRoute(request, body)
+        }
+        let (draft, photos) = try draft()
+        let result = try await service(tokens: RotatingTokens()).publish(draft: draft, photos: photos, conditionNotes: "")
+        XCTAssertEqual(result.listingID, "110591201126")
+        let sellerCalls = SellStub.log.filter { $0.path.hasPrefix("/sell/") || $0.path.contains("/media/") }
+        XCTAssertEqual(sellerCalls.first?.request.value(forHTTPHeaderField: "Authorization"), "Bearer old-token")
+        XCTAssertEqual(sellerCalls.dropFirst().first?.request.value(forHTTPHeaderField: "Authorization"), "Bearer new-token", "retried once with the refreshed token")
+        XCTAssertTrue(sellerCalls.dropFirst(2).allSatisfy { $0.request.value(forHTTPHeaderField: "Authorization") == "Bearer old-token" || $0.request.value(forHTTPHeaderField: "Authorization") == "Bearer new-token" })
     }
 }

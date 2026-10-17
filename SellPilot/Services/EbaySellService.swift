@@ -62,7 +62,7 @@ enum EbaySpecifics {
 struct EbaySellConfiguration {
     var environment: EbaySellEnvironment = .sandbox
     var credentials: EbayCredentials
-    var userToken: String
+    var tokens: any EbayUserTokenSource
     var marketplaceID = "EBAY_US"
     var locationKey = "SELLPILOT_HOME"
     /// Where items ship from. The sandbox default is a placeholder; production must use the seller's real location.
@@ -104,8 +104,15 @@ struct EbaySellService: EbayListingService {
         return try await EbayHTTP.perform(request, session: session)
     }
 
+    /// A call made as the signed-in seller. If eBay rejects the token (401), it is refreshed and the call is tried once more.
+    private func asSeller(_ method: String, _ url: URL, query: [URLQueryItem] = [], json: Any? = nil, multipart: (field: String, filename: String, data: Data)? = nil) async throws -> (Data, HTTPURLResponse) {
+        let result = try await send(method, url, query: query, token: try await configuration.tokens.accessToken(), json: json, multipart: multipart)
+        guard result.1.statusCode == 401 else { return result }
+        return try await send(method, url, query: query, token: try await configuration.tokens.refreshedAccessToken(), json: json, multipart: multipart)
+    }
+
     private func sell(_ method: String, _ path: String, query: [URLQueryItem] = [], json: Any? = nil) async throws -> (Data, HTTPURLResponse) {
-        try await send(method, configuration.environment.apiBase.appending(path: path), query: query, token: configuration.userToken, json: json)
+        try await asSeller(method, configuration.environment.apiBase.appending(path: path), query: query, json: json)
     }
 
     private func object(_ data: Data) -> [String: Any] { ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any]) ?? [:] }
@@ -192,10 +199,10 @@ struct EbaySellService: EbayListingService {
     func uploadImage(_ photo: SellItemPhoto) async throws -> URL {
         guard let source = [photo.previewData, photo.originalData].compactMap({ $0 }).first(where: { !$0.isEmpty }),
               let jpeg = ImageResizer.jpeg(from: source, maxPixel: 2000, quality: 0.85) else { throw ServiceError.invalid("A photo could not be read. Remove it and add it again.") }
-        let upload = try await send("POST", configuration.environment.mediaBase.appending(path: "commerce/media/v1_beta/image/create_image_from_file"), token: configuration.userToken, multipart: ("image", "photo.jpg", jpeg))
+        let upload = try await asSeller("POST", configuration.environment.mediaBase.appending(path: "commerce/media/v1_beta/image/create_image_from_file"), multipart: ("image", "photo.jpg", jpeg))
         guard [200, 201].contains(upload.1.statusCode) else { throw Self.failure(upload.1.statusCode, upload.0) }
         guard let location = upload.1.value(forHTTPHeaderField: "Location"), let imageURL = URL(string: location) else { throw ServiceError.invalid("eBay accepted the photo but did not say where it is.") }
-        let details = object(try expect([200], try await send("GET", imageURL, token: configuration.userToken)))
+        let details = object(try expect([200], try await asSeller("GET", imageURL)))
         guard let hosted = (details["imageUrl"] as? String).flatMap(URL.init(string:)) else { throw ServiceError.invalid("eBay did not return a hosted photo address.") }
         return hosted
     }
