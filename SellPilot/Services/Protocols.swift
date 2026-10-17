@@ -40,7 +40,7 @@ extension AppServices {
     var usesLiveIdentification: Bool { identification.disclosure != nil }
     var usesLivePricing: Bool { !(research is MockMarketResearchService) }
     /// Real identification when an API key is configured; otherwise the demo fixture. UI tests always get the fixture.
-    static func make() -> AppServices {
+    @MainActor static func make() -> AppServices {
         var services = AppServices()
         if !ProcessInfo.processInfo.arguments.contains("--ui-testing"), let key = APIKeyStore.load() {
             services.identification = ClaudeIdentificationService(configuration: .init(apiKey: key))
@@ -51,10 +51,16 @@ extension AppServices {
             else { services.research = ebay }
             services.pricing = AskingPricePricingService()
         }
-        if !ProcessInfo.processInfo.arguments.contains("--ui-testing"),
-           let app = APIKeyStore.load(.ebaySandboxAppID), let cert = APIKeyStore.load(.ebaySandboxCertID), let token = APIKeyStore.load(.ebaySandboxUserToken) {
-            services.ebay = EbaySellService(configuration: .init(environment: .sandbox, credentials: .init(appID: app, certID: cert), userToken: token))
-            if let key = APIKeyStore.load() { services.specifics = ClaudeSpecificsFiller(configuration: .init(apiKey: key)) }
+        if !ProcessInfo.processInfo.arguments.contains("--ui-testing"), let app = APIKeyStore.load(.ebaySandboxAppID), let cert = APIKeyStore.load(.ebaySandboxCertID) {
+            // A signed-in eBay connection wins; a pasted token is the fallback for testing.
+            let source: (any EbayUserTokenSource)? = {
+                if let connection = EbayConnections.make(.sandbox), connection.isConnected { return connection }
+                return APIKeyStore.load(.ebaySandboxUserToken).map { StaticEbayTokenSource(token: $0) }
+            }()
+            if let source {
+                services.ebay = EbaySellService(configuration: .init(environment: .sandbox, credentials: .init(appID: app, certID: cert), tokens: source))
+                if let key = APIKeyStore.load() { services.specifics = ClaudeSpecificsFiller(configuration: .init(apiKey: key)) }
+            }
         }
         return services
     }

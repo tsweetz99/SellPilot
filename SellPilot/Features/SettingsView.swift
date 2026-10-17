@@ -12,6 +12,9 @@ struct SettingsView: View {
     @State private var sbxCert = ""
     @State private var sbxToken = ""
     @State private var hasSandbox = APIKeyStore.load(.ebaySandboxUserToken) != nil
+    @State private var sbxRuName = ""
+    @State private var proxyURL = ""
+    @State private var connection = EbayConnections.make(.sandbox)
 
     var body: some View {
         NavigationStack {
@@ -54,10 +57,41 @@ struct SettingsView: View {
                 } header: { Text("eBay Sandbox (testing)") } footer: {
                     Text("For test listings only. Nothing is posted to real eBay. The user token expires after about two hours; paste a fresh one from the eBay developer portal when it does.")
                 }
+                Section {
+                    SecureField("eBay redirect name (RuName)", text: $sbxRuName).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("Token server URL (optional)", text: $proxyURL).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                    Button("Save sign-in settings") {
+                        do {
+                            if !sbxRuName.isEmpty { try APIKeyStore.save(sbxRuName, .ebaySandboxRuName) }
+                            if !proxyURL.isEmpty { try APIKeyStore.save(proxyURL, .ebayAuthProxy) }
+                            sbxRuName = ""; proxyURL = ""; connection = EbayConnections.make(.sandbox)
+                            message = connection == nil ? "Saved. Sign-in also needs the Sandbox App ID and either the Cert ID or a token server URL." : "Saved. You can connect now."
+                        } catch { message = error.localizedDescription }
+                    }.disabled(sbxRuName.isEmpty && proxyURL.isEmpty)
+                    if let connection { EbayConnectRow(connection: connection) }
+                } header: { Text("eBay Sandbox sign-in") } footer: {
+                    Text("Sign in with a sandbox test seller instead of pasting a token. SellPilot never sees your eBay password. Without a token server, the Cert ID is used directly from this device, which is fine for testing only.")
+                }
                 if let message { Section { Text(message).font(.footnote) } }
             }
             .navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
+        }
+    }
+}
+
+struct EbayConnectRow: View {
+    var connection: EbayConnection
+    var body: some View {
+        switch connection.status {
+        case .connected:
+            Label("Connected to eBay Sandbox", systemImage: "checkmark.seal.fill").foregroundStyle(PilotTheme.accent)
+            Button("Disconnect", role: .destructive) { connection.disconnect() }
+        case .connecting:
+            HStack { ProgressView(); Text("Waiting for eBay…") }
+        case .disconnected, .failed:
+            if case .failed(let reason) = connection.status { Text(reason).font(.footnote).foregroundStyle(.red) }
+            Button("Connect eBay Sandbox account") { Task { await connection.connect() } }.accessibilityIdentifier("connectEbay")
         }
     }
 }
