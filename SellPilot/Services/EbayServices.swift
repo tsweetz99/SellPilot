@@ -10,7 +10,8 @@ struct EbayCredentials: Equatable {
 }
 
 struct EbayConfiguration {
-    var credentials: EbayCredentials
+    /// nil when application tokens come from the token server instead of this device.
+    var credentials: EbayCredentials?
     var baseURL = URL(string: "https://api.ebay.com")!
     var marketplaceID = "EBAY_US"
     var resultLimit = 50
@@ -18,20 +19,26 @@ struct EbayConfiguration {
     var minimumListings = 5
 }
 
-/// Fetches and caches an application access token (client-credentials grant).
-actor EbayTokenProvider {
-    private let configuration: EbayConfiguration
+/// Where application-level tokens (category lookup, comps) come from.
+protocol EbayAppTokenSource {
+    func accessToken(forceRefresh: Bool) async throws -> String
+}
+extension EbayAppTokenSource { func accessToken() async throws -> String { try await accessToken(forceRefresh: false) } }
+
+/// Fetches and caches an application access token (client-credentials grant) using the Cert ID on this device.
+actor EbayTokenProvider: EbayAppTokenSource {
+    private let credentials: EbayCredentials
+    private let baseURL: URL
     private let session: URLSession
     private var token: String?
     private var expiry = Date.distantPast
-    init(configuration: EbayConfiguration, session: URLSession) { self.configuration = configuration; self.session = session }
+    init(credentials: EbayCredentials, baseURL: URL, session: URLSession) { self.credentials = credentials; self.baseURL = baseURL; self.session = session }
 
     func accessToken(forceRefresh: Bool = false) async throws -> String {
         if !forceRefresh, let token, expiry > Date() { return token }
-        var request = URLRequest(url: configuration.baseURL.appending(path: "identity/v1/oauth2/token"), timeoutInterval: 30)
+        var request = URLRequest(url: baseURL.appending(path: "identity/v1/oauth2/token"), timeoutInterval: 30)
         request.httpMethod = "POST"
-        let credentials = "\(configuration.credentials.appID):\(configuration.credentials.certID)"
-        request.setValue("Basic \(Data(credentials.utf8).base64EncodedString())", forHTTPHeaderField: "Authorization")
+        request.setValue("Basic \(Data("\(credentials.appID):\(credentials.certID)".utf8).base64EncodedString())", forHTTPHeaderField: "Authorization")
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = Data("grant_type=client_credentials&scope=https%3A%2F%2Fapi.ebay.com%2Foauth%2Fapi_scope".utf8)
         let (data, response) = try await EbayHTTP.perform(request, session: session)
@@ -43,6 +50,65 @@ actor EbayTokenProvider {
         expiry = Date().addingTimeInterval(max(60, ((json["expires_in"] as? Double) ?? 7200) - 120))
         return value
     }
+}
+
+/// Application tokens from your own token server, so the Cert ID never has to be on the device. Each install sends its own
+/// random key; the server uses it to rate-limit installs separately (it is not a login).
+actor ProxyAppTokenProvider: EbayAppTokenSource {
+    private let endpoint: URL
+    private let environment: EbaySellEnvironment
+    private let installKey: String
+    private let session: URLSession
+    private let now: () -> Date
+    private var token: String?
+    private var expiry = Date.distantPast
+    init(endpoint: URL, environment: EbaySellEnvironment, installKey: String, session: URLSession = .shared, now: @escaping () -> Date = Date.init) {
+        self.endpoint = endpoint; self.environment = environment; self.installKey = installKey; self.session = session; self.now = now
+    }
+
+    func accessToken(forceRefresh: Bool = false) async throws -> String {
+        if !forceRefresh, let token, expiry > now() { return token }
+        var request = URLRequest(url: endpoint, timeoutInterval: 30)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue(installKey, forHTTPHeaderField: "X-SellPilot-Install")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["environment": environment.rawValue, "grant": "client_credentials"])
+        let (data, response) = try await EbayHTTP.perform(request, session: session)
+        guard (200..<300).contains(response.statusCode) else { throw Self.failure(response.statusCode, data) }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let value = json["access_token"] as? String else {
+            throw ServiceError.invalid("The token server returned an unreadable response.")
+        }
+        token = value
+        expiry = now().addingTimeInterval(max(60, ((json["expires_in"] as? Double) ?? 7200) - 120))
+        return value
+    }
+
+    static func failure(_ status: Int, _ body: Data) -> ServiceError {
+        let error = ((try? JSONSerialization.jsonObject(with: body)) as? [String: Any])?["error"] as? String
+        switch (status, error) {
+        case (_, "rate_limited"): return .invalid("Too many eBay token requests from this device. Try again in a while.")
+        case (403, _): return .invalid("Your token server isn't set up to give out eBay app tokens yet.")
+        case (401, "install_key_required"): return .invalid("The token server did not accept this app's install key.")
+        case (503, _): return .invalid("The token server is temporarily unavailable.")
+        case (404, _): return .invalid("The token server address looks wrong (not found).")
+        default: return .invalid("The token server failed (\(status)).")
+        }
+    }
+}
+
+/// Tries the token server first and falls back to a Cert ID held on the device, so switching over never leaves a gap.
+struct FallbackAppTokenSource: EbayAppTokenSource {
+    var primary: any EbayAppTokenSource
+    var fallback: (any EbayAppTokenSource)?
+    func accessToken(forceRefresh: Bool) async throws -> String {
+        do { return try await primary.accessToken(forceRefresh: forceRefresh) }
+        catch { guard let fallback else { throw error }; return try await fallback.accessToken(forceRefresh: forceRefresh) }
+    }
+}
+
+/// Used when neither a token server nor a Cert ID is configured.
+struct MissingAppTokenSource: EbayAppTokenSource {
+    func accessToken(forceRefresh: Bool) async throws -> String { throw ServiceError.invalid("eBay isn't set up in Settings yet.") }
 }
 
 enum EbayHTTP {
@@ -78,11 +144,11 @@ enum EbayHTTP {
 struct EbayBrowseMarketResearchService: MarketResearchService {
     private let configuration: EbayConfiguration
     private let session: URLSession
-    private let tokens: EbayTokenProvider
+    private let tokens: any EbayAppTokenSource
 
-    init(configuration: EbayConfiguration, session: URLSession = .shared) {
+    init(configuration: EbayConfiguration, session: URLSession = .shared, appTokens: (any EbayAppTokenSource)? = nil) {
         self.configuration = configuration; self.session = session
-        self.tokens = EbayTokenProvider(configuration: configuration, session: session)
+        self.tokens = appTokens ?? configuration.credentials.map { EbayTokenProvider(credentials: $0, baseURL: configuration.baseURL, session: session) } ?? MissingAppTokenSource()
     }
 
     func research(item: SellItem) async throws -> [MarketComparable] {

@@ -8,13 +8,13 @@ enum APIKeyStore {
         case anthropic = "api-key", ebayAppID = "ebay-app-id", ebayCertID = "ebay-cert-id"
         case ebaySandboxAppID = "ebay-sandbox-app-id", ebaySandboxCertID = "ebay-sandbox-cert-id", ebaySandboxUserToken = "ebay-sandbox-user-token"
         case ebaySandboxRuName = "ebay-sandbox-runame", ebayRuName = "ebay-runame", ebayAuthProxy = "ebay-auth-proxy"
-        case ebaySandboxOAuthTokens = "ebay-sandbox-oauth-tokens", ebayOAuthTokens = "ebay-oauth-tokens"
+        case ebaySandboxOAuthTokens = "ebay-sandbox-oauth-tokens", ebayOAuthTokens = "ebay-oauth-tokens", installKey = "install-key"
         /// Debug builds also read these environment variables (set them in the Xcode scheme).
         var environmentName: String {
             switch self { case .anthropic: "SELLPILOT_ANTHROPIC_API_KEY"; case .ebayAppID: "SELLPILOT_EBAY_APP_ID"; case .ebayCertID: "SELLPILOT_EBAY_CERT_ID"
             case .ebaySandboxAppID: "SELLPILOT_EBAY_SANDBOX_APP_ID"; case .ebaySandboxCertID: "SELLPILOT_EBAY_SANDBOX_CERT_ID"; case .ebaySandboxUserToken: "SELLPILOT_EBAY_SANDBOX_USER_TOKEN"
             case .ebaySandboxRuName: "SELLPILOT_EBAY_SANDBOX_RUNAME"; case .ebayRuName: "SELLPILOT_EBAY_RUNAME"; case .ebayAuthProxy: "SELLPILOT_EBAY_AUTH_PROXY"
-            case .ebaySandboxOAuthTokens: "SELLPILOT_EBAY_SANDBOX_OAUTH_TOKENS"; case .ebayOAuthTokens: "SELLPILOT_EBAY_OAUTH_TOKENS" }
+            case .ebaySandboxOAuthTokens: "SELLPILOT_EBAY_SANDBOX_OAUTH_TOKENS"; case .ebayOAuthTokens: "SELLPILOT_EBAY_OAUTH_TOKENS"; case .installKey: "SELLPILOT_INSTALL_KEY" }
         }
     }
 
@@ -43,4 +43,22 @@ enum APIKeyStore {
     }
 
     static func delete(_ account: Account = .anthropic) { SecItemDelete(query(account) as CFDictionary) }
+
+    private static let installKeyLock = NSLock()
+    private static var cachedInstallKey: String?
+
+    /// A random identifier for this install, created on first use and kept in the Keychain. The token server uses it to
+    /// rate-limit installs separately. It identifies nothing about the person. It is also remembered in memory, so it stays
+    /// the same for the life of the app even if the Keychain refuses to store it (which would otherwise make every request
+    /// look like a brand-new install).
+    static func installKey() -> String {
+        installKeyLock.lock(); defer { installKeyLock.unlock() }
+        if let cachedInstallKey { return cachedInstallKey }
+        if let existing = load(.installKey), existing.count >= 32 { cachedInstallKey = existing; return existing }
+        var bytes = [UInt8](repeating: 0, count: 32)
+        let key = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess ? bytes.map { String(format: "%02x", $0) }.joined() : (UUID().uuidString + UUID().uuidString).replacingOccurrences(of: "-", with: "").lowercased()
+        try? save(key, .installKey)
+        cachedInstallKey = key
+        return key
+    }
 }
