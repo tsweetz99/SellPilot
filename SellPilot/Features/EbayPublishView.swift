@@ -71,3 +71,29 @@ struct EbayConnectCard: View {
     }
     .sheet(isPresented: $showSettings, onDismiss: { workflow.reloadServices() }) { SettingsView() } }
 }
+
+/// Which sandbox publishing settings are missing, so the screen can say so instead of hiding the section.
+enum EbaySetupReport {
+    typealias Loader = (APIKeyStore.Account) -> String?
+    static func missing(_ load: Loader = { APIKeyStore.load($0) }) -> [String] {
+        var items: [String] = []
+        if load(.ebaySandboxAppID) == nil { items.append("Sandbox App ID") }
+        if load(.ebaySandboxRuName) == nil { items.append("Redirect name (RuName)") }
+        if load(.ebayAuthProxy) == nil && load(.ebaySandboxCertID) == nil { items.append("Token server URL (or Sandbox Cert ID)") }
+        return items
+    }
+}
+
+struct EbaySetupCard: View {
+    var missing: [String]
+    @Bindable var workflow: SellingWorkflow
+    @State private var showSettings = false
+
+    var body: some View { PilotCard {
+        Text("Publish to eBay Sandbox (test)").font(.headline)
+        Text("Not set up on this device yet. Still needed in Settings: \(missing.joined(separator: ", ")). Then connect your eBay account.").font(.caption).foregroundStyle(.secondary)
+        Button { showSettings = true } label: { Label("Open Settings", systemImage: "gearshape").frame(maxWidth: .infinity).padding(12) }
+            .buttonStyle(.borderedProminent).accessibilityIdentifier("ebaySetupSettings")
+    }
+    .sheet(isPresented: $showSettings, onDismiss: { workflow.reloadServices() }) { SettingsView() } }
+}

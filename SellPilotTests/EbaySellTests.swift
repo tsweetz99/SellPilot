@@ -307,4 +307,23 @@ final class EbaySellTests: XCTestCase {
         services.ebay = FakeEbay()
         XCTAssertEqual(services.ebaySetup, .ready)
     }
+
+    func testTheReadyScreenOpensOnEbayWhenPublishingThereIsPossible() {
+        func draft(_ market: Marketplace) -> ListingDraft { ListingDraft(marketplace: market, title: "t", description: "d", price: 1, condition: .good, category: "c", keywords: [], itemSpecifics: [:], shippingNotes: "", localPickupNotes: "", photoOrder: []) }
+        let both = [draft(.facebook), draft(.ebay)], onlyFacebook = [draft(.facebook)]
+        XCTAssertEqual(ListingReviewView.defaultMarketplace(listings: both, ebaySetup: .ready), .ebay)
+        XCTAssertEqual(ListingReviewView.defaultMarketplace(listings: both, ebaySetup: .needsSignIn), .ebay, "the Connect card is reachable without touching the menu")
+        XCTAssertEqual(ListingReviewView.defaultMarketplace(listings: both, ebaySetup: .notConfigured), .facebook, "without eBay set up, the order is unchanged")
+        XCTAssertEqual(ListingReviewView.defaultMarketplace(listings: onlyFacebook, ebaySetup: .ready), .facebook)
+        XCTAssertNil(ListingReviewView.defaultMarketplace(listings: [], ebaySetup: .ready))
+    }
+
+    func testSetupReportNamesWhatIsMissing() {
+        let none: EbaySetupReport.Loader = { _ in nil }
+        XCTAssertEqual(EbaySetupReport.missing(none), ["Sandbox App ID", "Redirect name (RuName)", "Token server URL (or Sandbox Cert ID)"])
+        let some: EbaySetupReport.Loader = { $0 == .ebaySandboxRuName ? "Name-SBX-ru" : nil }
+        XCTAssertEqual(EbaySetupReport.missing(some), ["Sandbox App ID", "Token server URL (or Sandbox Cert ID)"])
+        let all: EbaySetupReport.Loader = { [.ebaySandboxAppID, .ebaySandboxRuName, .ebayAuthProxy].contains($0) ? "x" : nil }
+        XCTAssertTrue(EbaySetupReport.missing(all).isEmpty)
+    }
 }
