@@ -20,7 +20,7 @@ struct WorkflowView: View {
             } }.disabled(workflow.item.status == .sold || workflow.item.status == .archived)
             if workflow.item.workflowStep == SellItem.lastStep && (workflow.item.status == .ready || workflow.item.status == .draft) {
                 PrimaryButton(title: "I published it — mark Active", icon: "checkmark") { confirmActive = true }.accessibilityIdentifier("markActive")
-                Button { Task { await workflow.refreshMarketPrices() } } label: { Label("Refresh market prices", systemImage: "arrow.clockwise").frame(maxWidth: .infinity).padding(12) }.buttonStyle(.bordered).disabled(workflow.busy)
+                Button { Task { await workflow.refreshMarketPrices() } } label: { Label("Refresh market prices", systemImage: "arrow.clockwise").frame(maxWidth: .infinity).padding(12) }.buttonStyle(.bordered).disabled(workflow.busy || workflow.item.listings.contains { $0.ebayListingID != nil })
                 Button("Save as Draft") { workflow.item.status = .draft; if workflow.save() { dismiss() } }.frame(maxWidth: .infinity).padding()
             }
             if workflow.item.workflowStep == SellItem.lastStep && workflow.item.status != .archived { Button("Archive item") { workflow.item.status = .archived; if workflow.save() { dismiss() } }.foregroundStyle(.secondary) }

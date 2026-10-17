@@ -109,16 +109,18 @@ struct EbayBrowseMarketResearchService: MarketResearchService {
         return result.filter { !$0.isEmpty }
     }
 
-    static func conditionIDs(for condition: ItemCondition) -> String {
-        switch condition { case .new: "1000|1500"; case .excellent, .good, .fair: "3000"; case .parts: "7000" }
+    /// Broad NEW/USED groups work in every category. Specific IDs do not: books use 2750/4000/5000/6000, so a filter on the
+    /// generic "Used" ID (3000) hid every book. Only "for parts" has its own ID, and it is the same everywhere.
+    static func conditionFilter(for condition: ItemCondition) -> String {
+        switch condition { case .new: "conditions:{NEW}"; case .excellent, .good, .fair: "conditions:{USED}"; case .parts: "conditionIds:{7000}" }
     }
 
-    func makeSearchRequest(query: String, condition: ItemCondition, token: String) -> URLRequest {
+    func makeSearchRequest(query: String, condition: ItemCondition, token: String, filterByCondition: Bool = true) -> URLRequest {
         var components = URLComponents(url: configuration.baseURL.appending(path: "buy/browse/v1/item_summary/search"), resolvingAgainstBaseURL: false)!
         components.queryItems = [
             URLQueryItem(name: "q", value: query),
             URLQueryItem(name: "limit", value: String(configuration.resultLimit)),
-            URLQueryItem(name: "filter", value: "buyingOptions:{FIXED_PRICE},priceCurrency:USD,conditionIds:{\(Self.conditionIDs(for: condition))}"),
+            URLQueryItem(name: "filter", value: (["buyingOptions:{FIXED_PRICE}", "priceCurrency:USD"] + (filterByCondition ? [Self.conditionFilter(for: condition)] : [])).joined(separator: ",")),
         ]
         var request = URLRequest(url: components.url!, timeoutInterval: 30)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -128,11 +130,13 @@ struct EbayBrowseMarketResearchService: MarketResearchService {
     }
 
     private func search(query: String, condition: ItemCondition) async throws -> [MarketComparable] {
-        var refreshed = false
+        var refreshed = false, filterByCondition = true
         while true {
             let token = try await tokens.accessToken(forceRefresh: refreshed)
-            let (data, response) = try await EbayHTTP.perform(makeSearchRequest(query: query, condition: condition, token: token), session: session)
+            let (data, response) = try await EbayHTTP.perform(makeSearchRequest(query: query, condition: condition, token: token, filterByCondition: filterByCondition), session: session)
             if response.statusCode == 401, !refreshed { refreshed = true; continue }
+            // If eBay rejects the condition filter for some category, search without it rather than finding nothing.
+            if response.statusCode == 400, filterByCondition { filterByCondition = false; continue }
             guard (200..<300).contains(response.statusCode) else { throw EbayHTTP.error(status: response.statusCode, body: data) }
             return Self.parse(data, fallbackCondition: condition)
         }

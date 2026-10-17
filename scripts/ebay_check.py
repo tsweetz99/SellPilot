@@ -47,13 +47,22 @@ if status != 200:
              "   Likely causes: Sandbox keys, App ID/Cert ID mixed up, or the Production keyset is still disabled\n"
             "   (eBay disables new Production keysets until the Marketplace Account Deletion step is completed or exempted).")
 
-url = "https://api.ebay.com/buy/browse/v1/item_summary/search?" + urllib.parse.urlencode(
-    {"q": query, "limit": 20, "filter": "buyingOptions:{FIXED_PRICE},priceCurrency:USD,conditionIds:{3000}"})
-status, body = call(url, [f"Authorization: Bearer {body['access_token']}", "X-EBAY-C-MARKETPLACE-ID: EBAY_US"])
-print(f"2. Search '{query}': HTTP {status}")
-if status != 200:
-    sys.exit(f"   {json.dumps(body.get('errors', body))[:400]}")
-items = body.get("itemSummaries", [])
-print(f"   {len(items)} used fixed-price listings (of {body.get('total')} total)")
+token = body["access_token"]
+def search(label, condition_filter):
+    url = "https://api.ebay.com/buy/browse/v1/item_summary/search?" + urllib.parse.urlencode(
+        {"q": query, "limit": 20, "filter": "buyingOptions:{FIXED_PRICE},priceCurrency:USD," + condition_filter})
+    status, found = call(url, [f"Authorization: Bearer {token}", "X-EBAY-C-MARKETPLACE-ID: EBAY_US"])
+    if status != 200:
+        print(f"   {label}: HTTP {status} {json.dumps(found.get('errors', found))[:300]}")
+        return []
+    items = found.get("itemSummaries", [])
+    print(f"   {label}: {len(items)} listings of {found.get('total')} total")
+    return items
+
+print(f"2. Search '{query}'")
+items = search("conditions:{USED}      (what SellPilot uses now)", "conditions:{USED}")
+old = search("conditionIds:{3000}   (the old filter)       ", "conditionIds:{3000}")
 for item in items[:5]:
     print(f"   ${item['price']['value']:>8}  {item['title'][:70]}")
+if not items:
+    print("   No used listings. For niche titles that can simply mean none exist; try a popular one, e.g. 'atomic habits james clear'.")
