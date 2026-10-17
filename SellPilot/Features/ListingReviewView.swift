@@ -15,7 +15,7 @@ struct ListingReviewView: View {
         Text("Your Listing Is Ready").font(.largeTitle.bold())
         Text("\(workflow.item.pricingStrategy.rawValue) · Review the facts, photos, and price before posting.").foregroundStyle(.secondary)
         if !workflow.item.listings.isEmpty {
-            Picker("Marketplace listing", selection: Binding(get: { market ?? workflow.item.listings[0].marketplace }, set: { market = $0 })) { ForEach(workflow.item.listings) { draft in Text(draft.marketplace.rawValue).tag(draft.marketplace) } }.pickerStyle(.menu)
+            Picker("Marketplace listing", selection: Binding(get: { market ?? workflow.item.listings.first?.marketplace ?? .ebay }, set: { market = $0 })) { ForEach(workflow.item.listings) { draft in Text(draft.marketplace.rawValue).tag(draft.marketplace) } }.pickerStyle(.menu)
         }
         if let index {
             editor(index)
@@ -27,9 +27,10 @@ struct ListingReviewView: View {
                 if copied { Text("Copied to clipboard").font(.caption).foregroundStyle(PilotTheme.accent) }
                 PrimaryButton(title: workflow.item.listings[index].marketplace == .facebook ? "Prepare Facebook Listing" : "Export listing package", icon: "square.and.arrow.up") { Task { await export(index, photosOnly: false) } }
                 Button("Share original photos") { Task { await export(index, photosOnly: true) } }.buttonStyle(.bordered)
-                if workflow.item.listings[index].marketplace == .ebay { Button("Publish to eBay (mock)") { Task { await workflow.mockPublish(index) } }.buttonStyle(.bordered) }
+                if workflow.item.listings[index].marketplace == .ebay && workflow.services.ebay == nil { Button("Publish to eBay (mock)") { Task { await workflow.mockPublish(index) } }.buttonStyle(.bordered) }
                 if workflow.item.listings[index].mockPublishReference != nil { Text("Mock publish recorded. No listing was posted.").font(.caption) }
             }
+            if workflow.item.listings[index].marketplace == .ebay && workflow.services.ebay != nil { EbayPublishCard(workflow: workflow, index: index) }
         }
     }.sheet(item: $share) { payload in ShareSheet(items: payload.items) } }
     private func editor(_ index: Int) -> some View { PilotCard {

@@ -31,6 +31,21 @@ final class SellPilotUITests: XCTestCase {
         app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "tile-Sold")).firstMatch.tap()
         XCTAssertTrue(app.staticTexts["No sold yet"].waitForExistence(timeout: 5))
     }
+    /// Regression: refreshing prices from the Ready screen used to crash (the listing picker read a listing that had just been cleared).
+    func testRefreshingPricesFromTheReadyScreenDoesNotCrash() {
+        let app = XCUIApplication(); app.launchArguments = ["--ui-testing"]; app.launchEnvironment["SELLPILOT_TEST_STORE"] = UUID().uuidString; app.launch()
+        app.buttons["sellSomething"].tap()
+        XCTAssertTrue(app.buttons["demoPhoto"].waitForExistence(timeout: 5)); app.buttons["demoPhoto"].tap()
+        tap("Analyze photos", in: app)
+        XCTAssertTrue(app.textFields["productTitle"].waitForExistence(timeout: 5))
+        tap("See pricing", in: app); tap("Generate my listings", in: app)
+        tap("Refresh market prices", in: app)
+        XCTAssertTrue(app.navigationBars["Price & places"].waitForExistence(timeout: 10), "the app should show Price & places after refreshing")
+        let price = app.textFields["Asking price"]
+        XCTAssertTrue(price.waitForExistence(timeout: 5)); price.tap(); price.typeText("1")
+        tap("Generate my listings", in: app)
+        XCTAssertTrue(app.navigationBars["Ready"].waitForExistence(timeout: 10))
+    }
     private func tap(_ name: String, in app: XCUIApplication) {
         let button = app.buttons[name]
         for _ in 0..<30 { if button.exists && button.isHittable { button.tap(); return }; app.swipeUp() }

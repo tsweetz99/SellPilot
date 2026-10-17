@@ -87,6 +87,9 @@ struct MarketplaceRecommendation: Codable, Equatable, Identifiable {
 }
 struct ListingDraft: Codable, Equatable, Identifiable {
     var id = UUID(); var marketplace: Marketplace; var title: String; var description: String; var price: Double; var condition: ItemCondition; var category: String; var keywords: [String]; var itemSpecifics: [String: String]; var shippingNotes: String; var localPickupNotes: String; var photoOrder: [UUID]; var preparedAt: Date?; var mockPublishReference: String?
+    /// Set once eBay accepts the listing. `ebayEnvironment` is "sandbox" for test listings.
+    var ebayCategoryID: String? = nil; var ebayCategoryName: String? = nil; var ebayRequiredSpecifics: [String]? = nil
+    var ebayOfferID: String? = nil; var ebayListingID: String? = nil; var ebayListingURL: URL? = nil; var ebayEnvironment: String? = nil
     var fullText: String { "\(title)\n\(price.formatted(.currency(code: "USD")))\n\(condition.rawValue)\n\n\(description)\n\n\(shippingNotes)\n\(localPickupNotes)" }
 }
 struct SellItem: Codable, Equatable, Identifiable {
