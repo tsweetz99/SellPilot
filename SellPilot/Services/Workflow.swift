@@ -10,6 +10,7 @@ import Observation
     /// eBay category suggestions and the chosen category's item specifics, used by the publish card.
     var ebayCategoryChoices: [EbayCategory] = []
     var ebayAspects: [EbayAspect] = []
+    var ebayPolicies = EbaySellerPolicies()
     /// True when the last eBay failure means the seller must sign in again; the alert then offers to open Settings.
     var reconnectNeeded = false
     /// Rebuilt after the seller reconnects eBay in Settings, so a fresh sign-in is picked up without reopening the item.
@@ -85,7 +86,7 @@ import Observation
 
     @MainActor func reloadServices() { services = AppServices.make() }
 
-    /// Suggests an eBay category and pre-fills its required item specifics from what we know (and Claude, when configured).
+    /// Suggests an eBay category and pre-fills its required item specifics from what we know (and facts Claude extracts from the seller's own description, when configured).
     func prepareEbayListing(_ index: Int) async {
         guard let ebay = services.ebay, item.listings.indices.contains(index), !busy else { return }
         busy = true; defer { busy = false }
@@ -109,13 +110,23 @@ import Observation
         ebayAspects = (try? await ebay.aspects(for: id)) ?? []
     }
 
+    /// Loads the seller's business policies and, if none is chosen yet, selects the first of each so the seller can see and change them.
+    func loadEbayPolicies(_ index: Int) async {
+        guard let ebay = services.ebay, item.listings.indices.contains(index), let loaded = try? await ebay.policies() else { return }
+        ebayPolicies = loaded
+        func keep(_ chosen: String?, in list: [EbayPolicy]) -> String? { chosen.flatMap { id in list.contains { $0.id == id } ? id : nil } ?? list.first?.id }
+        item.listings[index].ebayFulfillmentPolicyID = keep(item.listings[index].ebayFulfillmentPolicyID, in: loaded.fulfillment)
+        item.listings[index].ebayPaymentPolicyID = keep(item.listings[index].ebayPaymentPolicyID, in: loaded.payment)
+        item.listings[index].ebayReturnPolicyID = keep(item.listings[index].ebayReturnPolicyID, in: loaded.returns)
+        save()
+    }
+
     private func applyEbayCategory(_ category: EbayCategory, index: Int, using ebay: any EbayListingService) async throws {
         let aspects = try await ebay.aspects(for: category.id)
         var specifics = EbaySpecifics.prefill(item: item, existing: item.listings[index].itemSpecifics, aspects: aspects)
-        let unfilled = aspects.filter { $0.required && !EbaySpecifics.missing([$0], in: specifics).isEmpty }
-        if !unfilled.isEmpty, let filler = services.specifics, let values = try? await filler.fill(item: item, aspects: unfilled) {
-            for (name, value) in values where !EbaySpecifics.missing(unfilled.filter { $0.name == name }, in: specifics).isEmpty { specifics[name] = value }
-        }
+        // Claude only sees the seller's own description; matching to eBay's names and allowed values happens here, on the device.
+        let facts = (try? await services.specifics?.facts(for: item)) ?? [:]
+        specifics = EbaySpecifics.fill(aspects: aspects, existing: specifics, facts: facts, item: item)
         ebayAspects = aspects
         item.listings[index].ebayCategoryID = category.id; item.listings[index].ebayCategoryName = category.name
         item.listings[index].ebayRequiredSpecifics = aspects.filter(\.required).map(\.name)

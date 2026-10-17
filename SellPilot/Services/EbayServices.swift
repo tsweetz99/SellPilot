@@ -243,8 +243,8 @@ struct AskingPricePricingService: PricingAnalysisService {
         func rounded(_ value: Double) -> Double { max(1, value.rounded()) }
         let confidence = asking.count < 5 ? 0.3 : asking.count < 15 ? 0.45 : 0.6
         let verified = comparables.filter { $0.status == .active }.allSatisfy { $0.verifiedMatch == true }
-        let basis = verified ? "\(asking.count) active eBay listings of the same model and configuration (matched by AI)"
-                             : "\(asking.count) active eBay listings (not checked for matching configuration, so they may include kits or accessories)"
+        let basis = verified ? "\(asking.count) active eBay listings matched to your item's model and wording"
+                             : "\(asking.count) active eBay listings (not checked against your item's model, so they may include kits or accessories)"
         return PricingRecommendation(
             sellFastPrice: rounded(median * 0.80), recommendedPrice: rounded(median * 0.90), maximizeReturnPrice: rounded(median),
             soldMedian: rounded(median * Self.assumedSaleDiscount), askingMedian: median,

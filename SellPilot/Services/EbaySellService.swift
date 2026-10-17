@@ -11,12 +11,15 @@ enum EbaySellEnvironment: String, Codable {
 struct EbayCategory: Equatable, Identifiable { var id: String; var name: String; var path: String }
 struct EbayAspect: Equatable {
     var name: String; var required: Bool; var selectionOnly: Bool; var multiValue: Bool; var values: [String]
-    /// The allowed value matching `value` ignoring case, if the aspect restricts values; otherwise `value` itself.
+    /// The allowed value matching `value` ignoring case, spacing and punctuation ("20 V" matches "20V"), if the aspect
+    /// restricts values; otherwise `value` itself.
     func normalized(_ value: String) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         guard selectionOnly else { return trimmed }
-        return values.first { $0.caseInsensitiveCompare(trimmed) == .orderedSame }
+        if let exact = values.first(where: { $0.caseInsensitiveCompare(trimmed) == .orderedSame }) { return exact }
+        let key = TitleText.compact(trimmed)
+        return key.isEmpty ? nil : values.first { TitleText.compact($0) == key }
     }
 }
 struct EbayPublishResult: Equatable { var offerID: String; var listingID: String; var url: URL }
@@ -27,11 +30,48 @@ protocol EbayListingService {
     func aspects(for categoryID: String) async throws -> [EbayAspect]
     func publish(draft: ListingDraft, photos: [SellItemPhoto], conditionNotes: String) async throws -> EbayPublishResult
     func withdraw(offerID: String) async throws
+    /// The eBay condition IDs this category accepts; empty when that cannot be determined.
+    func allowedConditions(for categoryID: String) async throws -> [Int]
+    /// The seller's business policies, for choosing which to use.
+    func policies() async throws -> EbaySellerPolicies
+}
+extension EbayListingService {
+    func allowedConditions(for categoryID: String) async throws -> [Int] { [] }
+    func policies() async throws -> EbaySellerPolicies { EbaySellerPolicies() }
 }
 
-/// Fills eBay item specifics from what is known about the item. Returns only values it is confident about.
+struct EbayPolicy: Equatable, Identifiable { var id: String; var name: String }
+struct EbaySellerPolicies: Equatable { var fulfillment: [EbayPolicy] = []; var payment: [EbayPolicy] = []; var returns: [EbayPolicy] = [] }
+
+/// eBay's condition IDs differ by category (books accept 2750, 4000, 5000 and 6000 but not 3000), so the app's four
+/// simple conditions are mapped to whichever eBay condition the category allows.
+enum EbayCondition {
+    static let names: [Int: String] = [1000: "NEW", 1500: "NEW_OTHER", 1750: "NEW_WITH_DEFECTS", 2000: "CERTIFIED_REFURBISHED", 2010: "EXCELLENT_REFURBISHED", 2020: "VERY_GOOD_REFURBISHED",
+                                       2030: "GOOD_REFURBISHED", 2500: "SELLER_REFURBISHED", 2750: "LIKE_NEW", 3000: "USED_EXCELLENT", 4000: "USED_VERY_GOOD", 5000: "USED_GOOD", 6000: "USED_ACCEPTABLE", 7000: "FOR_PARTS_OR_NOT_WORKING"]
+    static func preference(for condition: ItemCondition) -> [Int] {
+        switch condition {
+        case .new: [1000, 1500]
+        case .excellent: [3000, 2750, 4000, 5000, 6000]
+        case .good: [5000, 4000, 3000, 6000, 2750]
+        case .fair: [6000, 5000, 4000, 3000]
+        case .parts: [7000]
+        }
+    }
+    /// Used when the category's allowed conditions are unknown.
+    static func defaultName(for condition: ItemCondition) -> String {
+        switch condition { case .new: "NEW"; case .excellent: "USED_EXCELLENT"; case .good: "USED_GOOD"; case .fair: "USED_ACCEPTABLE"; case .parts: "FOR_PARTS_OR_NOT_WORKING" }
+    }
+    /// The eBay condition to use, or nil when the category allows conditions but none that fits.
+    static func choose(_ condition: ItemCondition, allowed: [Int]) -> String? {
+        guard !allowed.isEmpty else { return defaultName(for: condition) }
+        return preference(for: condition).first(where: allowed.contains).flatMap { names[$0] }
+    }
+    static func description(of ids: [Int]) -> String { ids.compactMap { names[$0] }.map { $0.replacingOccurrences(of: "_", with: " ").capitalized }.joined(separator: ", ") }
+}
+
+/// Generic facts about the item taken from the seller's own description (never from eBay data).
 protocol ItemSpecificsService {
-    func fill(item: SellItem, aspects: [EbayAspect]) async throws -> [String: String]
+    func facts(for item: SellItem) async throws -> [String: String]
 }
 
 enum EbaySpecifics {
@@ -52,6 +92,30 @@ enum EbaySpecifics {
         return result
     }
 
+    /// Fills still-empty required aspects on the device: the battery question from the seller's wording, the rest by matching
+    /// the item's facts to the aspect's name and eBay's allowed values. eBay's lists are never sent to an AI.
+    static func fill(aspects: [EbayAspect], existing: [String: String], facts: [String: String], item: SellItem) -> [String: String] {
+        var result = existing
+        let configuration = ItemConfiguration(text: ItemConfiguration.sellerText(for: item))
+        func isFilled(_ aspect: EbayAspect) -> Bool { !(result.first { $0.key.caseInsensitiveCompare(aspect.name) == .orderedSame }?.value ?? "").trimmingCharacters(in: .whitespaces).isEmpty }
+        let keyed = Dictionary(facts.map { (TitleText.compact($0.key), $0.value) }, uniquingKeysWith: { first, _ in first })
+        for aspect in aspects where aspect.required && !isFilled(aspect) {
+            let name = TitleText.compact(aspect.name)
+            var raw: String?
+            if name.contains("battery") && name.contains("include") { raw = configuration.bare ? "No" : (configuration.kit ? "Yes" : nil) }
+            raw = raw ?? keyed[name] ?? keyed.first { key, _ in key.count >= 3 && (name.contains(key) || key.contains(name)) }?.value
+            guard let raw, let value = aspect.normalized(raw) ?? yesNo(raw, for: aspect) else { continue }
+            result[aspect.name] = value
+        }
+        return result
+    }
+
+    private static func yesNo(_ raw: String, for aspect: EbayAspect) -> String? {
+        let text = TitleText.normalize(raw)
+        let yes = ["yes", "true", "y", "included", "includes"], no = ["no", "false", "n", "not included", "none", "excluded"]
+        return yes.contains(text) ? aspect.normalized("Yes") : no.contains(text) ? aspect.normalized("No") : nil
+    }
+
     static func missing(_ aspects: [EbayAspect], in specifics: [String: String]) -> [String] {
         aspects.filter { $0.required }.map(\.name).filter { name in
             (specifics.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value ?? "").trimmingCharacters(in: .whitespaces).isEmpty
@@ -68,6 +132,8 @@ struct EbaySellConfiguration {
     var locationKey = "SELLPILOT_HOME"
     /// Where items ship from. The sandbox default is a placeholder; production must use the seller's real location.
     var locationPostalCode = "95125"
+    /// Real listings are refused unless this is set, which only happens when the seller has turned live publishing on.
+    var allowLivePublishing = false
 }
 
 struct EbaySellService: EbayListingService {
@@ -160,6 +226,18 @@ struct EbaySellService: EbayListingService {
         }
     }
 
+    /// Asks eBay's Metadata API which conditions the category accepts. The method's required token type is not obvious, so the
+    /// seller's token is tried first and the application token second; if neither works the caller falls back to defaults.
+    func allowedConditions(for categoryID: String) async throws -> [Int] {
+        let url = configuration.environment.apiBase.appending(path: "sell/metadata/v1/marketplace/\(configuration.marketplaceID)/get_item_condition_policies")
+        let query = [URLQueryItem(name: "filter", value: "categoryIds:{\(categoryID)}")]
+        var result = try? await asSeller("GET", url, query: query)
+        if result?.1.statusCode != 200 { result = try? await send("GET", url, query: query, token: try await appTokens.accessToken()) }
+        guard let (data, response) = result, response.statusCode == 200 else { return [] }
+        let policies = (object(data)["itemConditionPolicies"] as? [[String: Any]]) ?? []
+        return ((policies.first?["itemConditions"] as? [[String: Any]]) ?? []).compactMap { ($0["conditionId"] as? String).flatMap(Int.init) ?? ($0["conditionId"] as? Int) }
+    }
+
     // MARK: Seller setup (user token)
 
     struct SellerSetup: Equatable { var fulfillmentPolicyID: String; var paymentPolicyID: String; var returnPolicyID: String }
@@ -195,6 +273,22 @@ struct EbaySellService: EbayListingService {
         return SellerSetup(fulfillmentPolicyID: ids["fulfillmentPolicyId"]!, paymentPolicyID: ids["paymentPolicyId"]!, returnPolicyID: ids["returnPolicyId"]!)
     }
 
+    func policies() async throws -> EbaySellerPolicies {
+        _ = try? await sell("POST", "sell/account/v1/program/opt_in", json: ["programType": "SELLING_POLICY_MANAGEMENT"])
+        func list(_ path: String, _ key: String, _ idKey: String) async throws -> [EbayPolicy] {
+            let data = object(try expect([200], try await sell("GET", "sell/account/v1/\(path)", query: [URLQueryItem(name: "marketplace_id", value: configuration.marketplaceID)])))
+            return ((data[key] as? [[String: Any]]) ?? []).compactMap { entry in (entry[idKey] as? String).map { EbayPolicy(id: $0, name: (entry["name"] as? String) ?? $0) } }
+        }
+        func all() async throws -> EbaySellerPolicies {
+            EbaySellerPolicies(fulfillment: try await list("fulfillment_policy", "fulfillmentPolicies", "fulfillmentPolicyId"), payment: try await list("payment_policy", "paymentPolicies", "paymentPolicyId"),
+                               returns: try await list("return_policy", "returnPolicies", "returnPolicyId"))
+        }
+        var result = try await all()
+        // A sandbox test seller starts with none, so defaults are made. A real seller's policies are never created for them.
+        if configuration.environment == .sandbox, result.fulfillment.isEmpty || result.payment.isEmpty || result.returns.isEmpty { _ = try await ensureSellerSetup(); result = try await all() }
+        return result
+    }
+
     // MARK: Photos
 
     func uploadImage(_ photo: SellItemPhoto) async throws -> URL {
@@ -203,6 +297,8 @@ struct EbaySellService: EbayListingService {
         let upload = try await asSeller("POST", configuration.environment.mediaBase.appending(path: "commerce/media/v1_beta/image/create_image_from_file"), multipart: ("image", "photo.jpg", jpeg))
         guard [200, 201].contains(upload.1.statusCode) else { throw Self.failure(upload.1.statusCode, upload.0) }
         guard let location = upload.1.value(forHTTPHeaderField: "Location"), let imageURL = URL(string: location) else { throw ServiceError.invalid("eBay accepted the photo but did not say where it is.") }
+        // The seller's token is sent to this address next, so it must be one of eBay's own.
+        guard imageURL.scheme == "https", let host = imageURL.host?.lowercased(), host == "ebay.com" || host.hasSuffix(".ebay.com") else { throw ServiceError.invalid("eBay returned an unexpected photo address, so the photo was not used.") }
         let details = object(try expect([200], try await asSeller("GET", imageURL)))
         guard let hosted = (details["imageUrl"] as? String).flatMap(URL.init(string:)) else { throw ServiceError.invalid("eBay did not return a hosted photo address.") }
         return hosted
@@ -219,17 +315,24 @@ struct EbaySellService: EbayListingService {
     }
 
     func publish(draft: ListingDraft, photos: [SellItemPhoto], conditionNotes: String) async throws -> EbayPublishResult {
-        guard configuration.environment == .sandbox else { throw ServiceError.invalid("Publishing to real eBay isn't enabled yet. Use the sandbox for test listings.") }
+        if configuration.environment == .production {
+            guard configuration.allowLivePublishing else { throw ServiceError.invalid("Publishing to real eBay isn't enabled. Turn it on in Settings.") }
+            guard LiveSettings.isValidZip(configuration.locationPostalCode) else { throw ServiceError.invalid("Enter the 5-digit ZIP code you ship from in Settings before publishing to real eBay.") }
+        }
         guard let categoryID = draft.ebayCategoryID, !categoryID.isEmpty else { throw ServiceError.invalid("Choose an eBay category first.") }
         guard !draft.title.trimmingCharacters(in: .whitespaces).isEmpty, draft.price > 0, !photos.isEmpty else { throw ServiceError.invalid("A title, a positive price and at least one photo are required.") }
         let setup = try await ensureSellerSetup()
         var imageURLs: [String] = []
         for photo in photos.prefix(24) { imageURLs.append(try await uploadImage(photo).absoluteString) }
 
+        let allowedConditions = (try? await allowedConditions(for: categoryID)) ?? []
+        guard let condition = EbayCondition.choose(draft.condition, allowed: allowedConditions) else {
+            throw ServiceError.invalid("This eBay category doesn't accept the condition \"\(draft.condition.rawValue)\". It accepts: \(EbayCondition.description(of: allowedConditions)). Choose another category, or change the item's condition.")
+        }
         let sku = Self.sku(for: draft)
         let aspects = draft.itemSpecifics.filter { !$0.value.trimmingCharacters(in: .whitespaces).isEmpty }.mapValues { [$0] }
         var item: [String: Any] = [
-            "availability": ["shipToLocationAvailability": ["quantity": 1]], "condition": Self.conditionEnum(draft.condition),
+            "availability": ["shipToLocationAvailability": ["quantity": 1]], "condition": condition,
             "product": ["title": String(draft.title.prefix(80)), "description": Self.html(draft.description), "aspects": aspects, "imageUrls": imageURLs],
         ]
         if !conditionNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { item["conditionDescription"] = String(conditionNotes.prefix(1000)) }
@@ -238,7 +341,7 @@ struct EbaySellService: EbayListingService {
         let offer: [String: Any] = [
             "sku": sku, "marketplaceId": configuration.marketplaceID, "format": "FIXED_PRICE", "availableQuantity": 1, "categoryId": categoryID, "merchantLocationKey": configuration.locationKey,
             "listingDescription": Self.html(draft.description), "pricingSummary": ["price": ["value": String(format: "%.2f", draft.price), "currency": "USD"]],
-            "listingPolicies": ["fulfillmentPolicyId": setup.fulfillmentPolicyID, "paymentPolicyId": setup.paymentPolicyID, "returnPolicyId": setup.returnPolicyID],
+            "listingPolicies": ["fulfillmentPolicyId": draft.ebayFulfillmentPolicyID ?? setup.fulfillmentPolicyID, "paymentPolicyId": draft.ebayPaymentPolicyID ?? setup.paymentPolicyID, "returnPolicyId": draft.ebayReturnPolicyID ?? setup.returnPolicyID],
         ]
         let offerID = try await upsertOffer(offer, sku: sku)
         let published = object(try expect([200], try await sell("POST", "sell/inventory/v1/offer/\(offerID)/publish")))
