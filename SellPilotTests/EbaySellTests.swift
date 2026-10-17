@@ -284,7 +284,7 @@ final class EbaySellTests: XCTestCase {
         let (draft, photos) = try draft()
         let result = try await service(tokens: RotatingTokens()).publish(draft: draft, photos: photos, conditionNotes: "")
         XCTAssertEqual(result.listingID, "110591201126")
-        let sellerCalls = SellStub.log.filter { $0.path.hasPrefix("/sell/") || $0.path.contains("/media/") }
+        let sellerCalls = SellStub.log.filter { ($0.path.hasPrefix("/sell/") && !$0.path.hasPrefix("/sell/metadata/")) || $0.path.contains("/media/") }   // the condition lookup may use the app token
         XCTAssertEqual(sellerCalls.first?.request.value(forHTTPHeaderField: "Authorization"), "Bearer old-token")
         XCTAssertEqual(sellerCalls.dropFirst().first?.request.value(forHTTPHeaderField: "Authorization"), "Bearer new-token", "retried once with the refreshed token")
         XCTAssertTrue(sellerCalls.dropFirst(2).allSatisfy { $0.request.value(forHTTPHeaderField: "Authorization") == "Bearer old-token" || $0.request.value(forHTTPHeaderField: "Authorization") == "Bearer new-token" })
@@ -343,5 +343,50 @@ final class EbaySellTests: XCTestCase {
         XCTAssertEqual(EbaySetupReport.missing(some), ["Sandbox App ID", "Token server URL (or Sandbox Cert ID)"])
         let all: EbaySetupReport.Loader = { [.ebaySandboxAppID, .ebaySandboxRuName, .ebayAuthProxy].contains($0) ? "x" : nil }
         XCTAssertTrue(EbaySetupReport.missing(all).isEmpty)
+    }
+
+    // MARK: Conditions that fit the category
+
+    func testTheAppsConditionsMapToWhatEachCategoryAllows() {
+        let books = [2750, 4000, 5000, 6000], tools = [1000, 3000, 5000, 6000, 7000]
+        XCTAssertEqual(EbayCondition.choose(.excellent, allowed: books), "LIKE_NEW", "books have no 3000, so Excellent becomes Like New")
+        XCTAssertEqual(EbayCondition.choose(.good, allowed: books), "USED_GOOD"); XCTAssertEqual(EbayCondition.choose(.fair, allowed: books), "USED_ACCEPTABLE")
+        XCTAssertEqual(EbayCondition.choose(.excellent, allowed: tools), "USED_EXCELLENT"); XCTAssertEqual(EbayCondition.choose(.parts, allowed: tools), "FOR_PARTS_OR_NOT_WORKING")
+        XCTAssertNil(EbayCondition.choose(.new, allowed: books), "a category that accepts only used conditions cannot take a new item")
+        XCTAssertNil(EbayCondition.choose(.parts, allowed: books))
+        XCTAssertEqual(EbayCondition.choose(.good, allowed: []), "USED_GOOD", "unknown: the earlier default")
+        XCTAssertEqual(EbayCondition.description(of: books), "Like New, Used Very Good, Used Good, Used Acceptable")
+    }
+
+    func testPublishUsesTheConditionTheCategoryAllowsAndExplainsWhenNoneFits() async throws {
+        func route(allowed: [String]) -> (URLRequest, Data) -> Reply {
+            { request, body in
+                if request.url!.path == "/sell/metadata/v1/marketplace/EBAY_US/get_item_condition_policies" {
+                    return Reply(body: ["itemConditionPolicies": [["categoryId": "168134", "itemConditions": allowed.map { ["conditionId": $0, "conditionDescription": "x"] }]]])
+                }
+                return self.happyRoute(request, body)
+            }
+        }
+        SellStub.route = route(allowed: ["2750", "4000", "5000", "6000"])
+        var (draft, photos) = try draft(); draft.condition = .excellent
+        _ = try await service().publish(draft: draft, photos: photos, conditionNotes: "")
+        let put = try XCTUnwrap(SellStub.log.first { $0.method == "PUT" && $0.path.contains("inventory_item") })
+        XCTAssertEqual((try XCTUnwrap(JSONSerialization.jsonObject(with: put.body) as? [String: Any]))["condition"] as? String, "LIKE_NEW")
+        let lookup = try XCTUnwrap(SellStub.log.first { $0.path.contains("get_item_condition_policies") })
+        XCTAssertEqual(URLComponents(url: lookup.request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "filter" }?.value, "categoryIds:{168134}")
+
+        SellStub.log = []; SellStub.route = route(allowed: ["2750", "4000", "5000", "6000"])
+        draft.condition = .new
+        do { _ = try await service().publish(draft: draft, photos: photos, conditionNotes: ""); XCTFail() }
+        catch { XCTAssertTrue(error.localizedDescription.contains("doesn't accept the condition \"New\"")); XCTAssertTrue(error.localizedDescription.contains("Like New")) }
+        XCTAssertFalse(SellStub.log.contains { $0.path.contains("inventory_item") }, "nothing is created when the condition cannot be used")
+    }
+
+    func testIfTheMetadataLookupFailsTheEarlierDefaultsApply() async throws {
+        SellStub.route = happyRoute   // the lookup answers 404 here
+        var (draft, photos) = try draft(); draft.condition = .good
+        _ = try await service().publish(draft: draft, photos: photos, conditionNotes: "")
+        let put = try XCTUnwrap(SellStub.log.first { $0.method == "PUT" && $0.path.contains("inventory_item") })
+        XCTAssertEqual((try XCTUnwrap(JSONSerialization.jsonObject(with: put.body) as? [String: Any]))["condition"] as? String, "USED_GOOD")
     }
 }

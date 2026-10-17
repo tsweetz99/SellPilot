@@ -30,6 +30,35 @@ protocol EbayListingService {
     func aspects(for categoryID: String) async throws -> [EbayAspect]
     func publish(draft: ListingDraft, photos: [SellItemPhoto], conditionNotes: String) async throws -> EbayPublishResult
     func withdraw(offerID: String) async throws
+    /// The eBay condition IDs this category accepts; empty when that cannot be determined.
+    func allowedConditions(for categoryID: String) async throws -> [Int]
+}
+extension EbayListingService { func allowedConditions(for categoryID: String) async throws -> [Int] { [] } }
+
+/// eBay's condition IDs differ by category (books accept 2750, 4000, 5000 and 6000 but not 3000), so the app's four
+/// simple conditions are mapped to whichever eBay condition the category allows.
+enum EbayCondition {
+    static let names: [Int: String] = [1000: "NEW", 1500: "NEW_OTHER", 1750: "NEW_WITH_DEFECTS", 2000: "CERTIFIED_REFURBISHED", 2010: "EXCELLENT_REFURBISHED", 2020: "VERY_GOOD_REFURBISHED",
+                                       2030: "GOOD_REFURBISHED", 2500: "SELLER_REFURBISHED", 2750: "LIKE_NEW", 3000: "USED_EXCELLENT", 4000: "USED_VERY_GOOD", 5000: "USED_GOOD", 6000: "USED_ACCEPTABLE", 7000: "FOR_PARTS_OR_NOT_WORKING"]
+    static func preference(for condition: ItemCondition) -> [Int] {
+        switch condition {
+        case .new: [1000, 1500]
+        case .excellent: [3000, 2750, 4000, 5000, 6000]
+        case .good: [5000, 4000, 3000, 6000, 2750]
+        case .fair: [6000, 5000, 4000, 3000]
+        case .parts: [7000]
+        }
+    }
+    /// Used when the category's allowed conditions are unknown.
+    static func defaultName(for condition: ItemCondition) -> String {
+        switch condition { case .new: "NEW"; case .excellent: "USED_EXCELLENT"; case .good: "USED_GOOD"; case .fair: "USED_ACCEPTABLE"; case .parts: "FOR_PARTS_OR_NOT_WORKING" }
+    }
+    /// The eBay condition to use, or nil when the category allows conditions but none that fits.
+    static func choose(_ condition: ItemCondition, allowed: [Int]) -> String? {
+        guard !allowed.isEmpty else { return defaultName(for: condition) }
+        return preference(for: condition).first(where: allowed.contains).flatMap { names[$0] }
+    }
+    static func description(of ids: [Int]) -> String { ids.compactMap { names[$0] }.map { $0.replacingOccurrences(of: "_", with: " ").capitalized }.joined(separator: ", ") }
 }
 
 /// Generic facts about the item taken from the seller's own description (never from eBay data).
@@ -187,6 +216,18 @@ struct EbaySellService: EbayListingService {
         }
     }
 
+    /// Asks eBay's Metadata API which conditions the category accepts. The method's required token type is not obvious, so the
+    /// seller's token is tried first and the application token second; if neither works the caller falls back to defaults.
+    func allowedConditions(for categoryID: String) async throws -> [Int] {
+        let url = configuration.environment.apiBase.appending(path: "sell/metadata/v1/marketplace/\(configuration.marketplaceID)/get_item_condition_policies")
+        let query = [URLQueryItem(name: "filter", value: "categoryIds:{\(categoryID)}")]
+        var result = try? await asSeller("GET", url, query: query)
+        if result?.1.statusCode != 200 { result = try? await send("GET", url, query: query, token: try await appTokens.accessToken()) }
+        guard let (data, response) = result, response.statusCode == 200 else { return [] }
+        let policies = (object(data)["itemConditionPolicies"] as? [[String: Any]]) ?? []
+        return ((policies.first?["itemConditions"] as? [[String: Any]]) ?? []).compactMap { ($0["conditionId"] as? String).flatMap(Int.init) ?? ($0["conditionId"] as? Int) }
+    }
+
     // MARK: Seller setup (user token)
 
     struct SellerSetup: Equatable { var fulfillmentPolicyID: String; var paymentPolicyID: String; var returnPolicyID: String }
@@ -253,10 +294,14 @@ struct EbaySellService: EbayListingService {
         var imageURLs: [String] = []
         for photo in photos.prefix(24) { imageURLs.append(try await uploadImage(photo).absoluteString) }
 
+        let allowedConditions = (try? await allowedConditions(for: categoryID)) ?? []
+        guard let condition = EbayCondition.choose(draft.condition, allowed: allowedConditions) else {
+            throw ServiceError.invalid("This eBay category doesn't accept the condition \"\(draft.condition.rawValue)\". It accepts: \(EbayCondition.description(of: allowedConditions)). Choose another category, or change the item's condition.")
+        }
         let sku = Self.sku(for: draft)
         let aspects = draft.itemSpecifics.filter { !$0.value.trimmingCharacters(in: .whitespaces).isEmpty }.mapValues { [$0] }
         var item: [String: Any] = [
-            "availability": ["shipToLocationAvailability": ["quantity": 1]], "condition": Self.conditionEnum(draft.condition),
+            "availability": ["shipToLocationAvailability": ["quantity": 1]], "condition": condition,
             "product": ["title": String(draft.title.prefix(80)), "description": Self.html(draft.description), "aspects": aspects, "imageUrls": imageURLs],
         ]
         if !conditionNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { item["conditionDescription"] = String(conditionNotes.prefix(1000)) }
