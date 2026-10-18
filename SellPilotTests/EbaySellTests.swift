@@ -222,7 +222,7 @@ final class EbaySellTests: XCTestCase {
     @MainActor func testPreparePicksACategoryAndFillsWhatItCanThenPublishNeedsTheRest() async throws {
         let ebay = FakeEbay(); let flow = try workflow(ebay, specifics: nil)
         await flow.prepareEbayListing(0)
-        XCTAssertEqual(flow.item.listings[0].ebayCategoryID, "168134"); XCTAssertEqual(flow.item.listings[0].itemSpecifics["Brand"], "DEWALT")
+        XCTAssertEqual(flow.item.listings[0].ebayCategoryID, "168134"); XCTAssertEqual(flow.item.listings[0].ebayCategoryName, "Tools › Impact Drivers", "the full path is kept so the menu is not just \"Women\""); XCTAssertEqual(flow.item.listings[0].itemSpecifics["Brand"], "DEWALT")
         XCTAssertEqual(flow.item.listings[0].ebayRequiredSpecifics, ["Brand", "Voltage"]); XCTAssertEqual(flow.ebayCategoryChoices.count, 2)
         await flow.publishToEbay(0)
         XCTAssertTrue(try XCTUnwrap(flow.error).contains("Voltage")); XCTAssertTrue(ebay.published.isEmpty, "nothing is sent while required details are missing")
