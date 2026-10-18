@@ -135,7 +135,7 @@ import Observation
         let facts = (try? await services.specifics?.facts(for: item)) ?? [:]
         specifics = EbaySpecifics.fill(aspects: aspects, existing: specifics, facts: facts, item: item)
         ebayAspects = aspects
-        item.listings[index].ebayCategoryID = category.id; item.listings[index].ebayCategoryName = category.name
+        item.listings[index].ebayCategoryID = category.id; item.listings[index].ebayCategoryName = category.path
         item.listings[index].ebayRequiredSpecifics = aspects.filter(\.required).map(\.name)
         item.listings[index].itemSpecifics = specifics; item.listings[index].category = category.name
         save()

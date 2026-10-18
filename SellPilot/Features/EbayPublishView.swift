@@ -55,7 +55,7 @@ struct EbayPublishCard: View {
         Menu {
             ForEach(workflow.ebayCategoryChoices) { choice in Button(choice.path) { Task { await workflow.chooseEbayCategory(choice, index: index) } } }
             Button("Search again") { Task { await workflow.prepareEbayListing(index) } }
-        } label: { HStack { Text(draft.ebayCategoryName ?? "Choose a category"); Spacer(); Image(systemName: "chevron.up.chevron.down").font(.caption) }.padding(10).background(.quaternary, in: RoundedRectangle(cornerRadius: 10)) }
+        } label: { HStack { Text(draft.ebayCategoryName ?? "Choose a category").multilineTextAlignment(.leading); Spacer(); Image(systemName: "chevron.up.chevron.down").font(.caption) }.padding(10).background(.quaternary, in: RoundedRectangle(cornerRadius: 10)) }
             .disabled(workflow.busy)
     } }
 
