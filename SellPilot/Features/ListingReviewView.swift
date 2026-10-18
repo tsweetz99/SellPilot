@@ -27,7 +27,7 @@ struct ListingReviewView: View {
             editor(index)
             PilotCard {
                 Text("Publish / Export").font(.headline)
-                Text("Export prepares copy and original photos. You post the listing yourself; mock publishing never posts to a marketplace.").font(.caption).foregroundStyle(.secondary)
+                Text(workflow.services.ebaySetup == .notConfigured ? "Export prepares copy and original photos. You post the listing yourself; mock publishing never posts to a marketplace." : "Export prepares copy and original photos if you would rather post it yourself. To list on eBay directly, use Publish to eBay below.").font(.caption).foregroundStyle(.secondary)
                 HStack { Button("Copy title") { UIPasteboard.general.string = workflow.item.listings[index].title; copied = true }; Button("Copy description") { UIPasteboard.general.string = workflow.item.listings[index].description; copied = true } }.buttonStyle(.bordered)
                 Button("Copy full listing") { UIPasteboard.general.string = workflow.item.listings[index].fullText; copied = true }.buttonStyle(.bordered)
                 if copied { Text("Copied to clipboard").font(.caption).foregroundStyle(PilotTheme.accent) }
