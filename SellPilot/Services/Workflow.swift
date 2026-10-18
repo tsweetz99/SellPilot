@@ -13,6 +13,8 @@ import Observation
     var ebayPolicies = EbaySellerPolicies()
     /// Why the seller's policies could not be loaded, shown under the policy menus instead of an endless "Loading…".
     var ebayPoliciesProblem: String?
+    /// One line about the book lookup (found, not found, invalid ISBN), shown next to the ISBN field.
+    var isbnStatus: String?
     /// True when the last eBay failure means the seller must sign in again; the alert then offers to open Settings.
     var reconnectNeeded = false
     /// Rebuilt after the seller reconnects eBay in Settings, so a fresh sign-in is picked up without reopening the item.
@@ -30,6 +32,7 @@ import Observation
                 do { result = try await services.identification.identify(photos: item.orderedPhotos) }
                 catch { identificationFailed = true; throw error }
                 item.identification = result; apply(result.product); item.condition = result.detectedCondition; item.subcategory = result.subcategory; item.color = result.color; item.confidenceScore = result.confidenceScore
+                applyBookDetails()
             case 1:
                 guard !item.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw ServiceError.invalid("Enter a product name.") }
                 guard !item.listings.contains(where: { $0.ebayListingID != nil }) else { throw ServiceError.invalid("This item has a live eBay listing. End it before changing the item or its price.") }
@@ -175,6 +178,38 @@ import Observation
         } catch { report(error) }
     }
 
+    /// Looks for an ISBN barcode in a newly added photo. Runs on the device; the first barcode found wins.
+    func scanForISBN(in photoData: Data) async {
+        guard item.isbn == nil, let isbn = await BarcodeReader.isbn(in: photoData), item.isbn == nil else { return }
+        await setISBN(isbn)
+    }
+
+    /// For an ISBN the seller typed in. Says so when it is not a valid ISBN.
+    func lookUpISBN(_ raw: String) async {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { item.isbn = nil; item.bookDetails = nil; isbnStatus = nil; save(); return }
+        guard let isbn = ISBN.normalize(trimmed) else { isbnStatus = "That isn't a valid ISBN. Check the digits on the back cover."; return }
+        await setISBN(isbn)
+    }
+
+    private func setISBN(_ isbn: String) async {
+        item.isbn = isbn; item.bookDetails = nil; isbnStatus = "ISBN \(isbn)"
+        if let books = services.books {
+            do {
+                if let details = try await books.lookup(isbn: isbn) { item.bookDetails = details; isbnStatus = "ISBN \(isbn) · \(details.listingTitle)"; applyBookDetails() }
+                else { isbnStatus = "ISBN \(isbn) · not in the book catalog. Fill in the details yourself." }
+            } catch { isbnStatus = "ISBN \(isbn) · couldn't reach the book catalog. Fill in the details yourself." }
+        }
+        save()
+    }
+
+    /// The catalog's title and publisher are exact, so they replace the photo-based guess; condition and color stay from the photos.
+    func applyBookDetails() {
+        guard let details = item.bookDetails else { return }
+        item.title = details.listingTitle; item.category = "Books"
+        if let publisher = details.publisher { item.brand = publisher }
+        item.model = ""
+    }
     func apply(_ match: ProductMatch) { item.title = match.title; item.brand = match.brand; item.model = match.model; item.category = match.category }
     func enhance(_ photoID: UUID, style: EnhancementStyle) async {
         guard let index = item.photos.firstIndex(where: { $0.id == photoID }) else { return }

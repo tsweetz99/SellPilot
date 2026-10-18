@@ -101,6 +101,8 @@ struct SellItem: Codable, Equatable, Identifiable {
     var status: ItemStatus = .draft; var selectedMarketplace: Marketplace = .facebook; var selectedMarketplaces: [Marketplace] = [.facebook, .ebay]
     var pricingStrategy: PricingStrategy = .recommended; var askingPrice = 0.0; var soldPrice: Double?; var soldDate: Date?; var coverPhotoID: UUID?
     var photos: [SellItemPhoto] = []; var identification: ProductIdentification?; var comparables: [MarketComparable] = []; var pricing: PricingRecommendation?; var recommendations: [MarketplaceRecommendation] = []; var listings: [ListingDraft] = []
+    /// Set for books, from a barcode photo or typed in. Always a valid ISBN-13.
+    var isbn: String? = nil; var bookDetails: BookDetails? = nil
     var workflowStep = 0
     /// nil on items saved with the original 8-step flow; see `migratedStep`.
     var flowVersion: Int? = SellItem.currentFlowVersion
@@ -109,7 +111,7 @@ struct SellItem: Codable, Equatable, Identifiable {
     static let lastStep = 3
     /// Maps a step number from the original 8-step flow (photograph, confirm, notes, market, price, places, photos, ready).
     static func migratedStep(fromV1 step: Int) -> Int { [0, 1, 1, 2, 2, 2, 2, 3][min(max(step, 0), 7)] }
-    static let categories = ["Tools", "Furniture", "Electronics", "Sporting goods", "Camping equipment", "Collectibles", "Household items", "Baby gear", "Décor", "Automotive accessories", "Hobby equipment", "Other"]
+    static let categories = ["Books", "Tools", "Furniture", "Electronics", "Sporting goods", "Camping equipment", "Collectibles", "Household items", "Baby gear", "Décor", "Automotive accessories", "Hobby equipment", "Other"]
     var orderedPhotos: [SellItemPhoto] {
         guard let coverPhotoID, let cover = photos.first(where: { $0.id == coverPhotoID }) else { return photos }
         return [cover] + photos.filter { $0.id != coverPhotoID }

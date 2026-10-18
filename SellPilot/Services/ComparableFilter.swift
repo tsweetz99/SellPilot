@@ -16,6 +16,8 @@ struct FilteredMarketResearchService: MarketResearchService {
 
     func research(item: SellItem) async throws -> [MarketComparable] {
         let comparables = try await base.research(item: item)
+        // Listings found by the item's ISBN are already the same book; title rules would only drop good ones.
+        if !comparables.isEmpty, comparables.allSatisfy({ $0.verifiedMatch == true }) { return comparables }
         guard let matches = try? await filter.matchingIndexes(in: comparables, for: item), matches.count >= minimumMatches else { return comparables }
         return comparables.enumerated().filter { matches.contains($0.offset) }.map { var comparable = $0.element; comparable.verifiedMatch = true; return comparable }
     }
