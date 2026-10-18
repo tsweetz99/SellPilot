@@ -11,6 +11,8 @@ import Observation
     var ebayCategoryChoices: [EbayCategory] = []
     var ebayAspects: [EbayAspect] = []
     var ebayPolicies = EbaySellerPolicies()
+    /// Why the seller's policies could not be loaded, shown under the policy menus instead of an endless "Loading…".
+    var ebayPoliciesProblem: String?
     /// True when the last eBay failure means the seller must sign in again; the alert then offers to open Settings.
     var reconnectNeeded = false
     /// Rebuilt after the seller reconnects eBay in Settings, so a fresh sign-in is picked up without reopening the item.
@@ -112,7 +114,12 @@ import Observation
 
     /// Loads the seller's business policies and, if none is chosen yet, selects the first of each so the seller can see and change them.
     func loadEbayPolicies(_ index: Int) async {
-        guard let ebay = services.ebay, item.listings.indices.contains(index), let loaded = try? await ebay.policies() else { return }
+        guard let ebay = services.ebay, item.listings.indices.contains(index) else { return }
+        let loaded: EbaySellerPolicies
+        do { loaded = try await ebay.policies() } catch { ebayPoliciesProblem = error.localizedDescription; return }
+        ebayPoliciesProblem = loaded.fulfillment.isEmpty || loaded.payment.isEmpty || loaded.returns.isEmpty
+            ? "eBay returned no \([loaded.fulfillment.isEmpty ? "shipping" : nil, loaded.payment.isEmpty ? "payment" : nil, loaded.returns.isEmpty ? "return" : nil].compactMap { $0 }.joined(separator: ", ")) policy for this account. Create it in Seller Hub (Account > Business policies), then reload."
+            : nil
         ebayPolicies = loaded
         func keep(_ chosen: String?, in list: [EbayPolicy]) -> String? { chosen.flatMap { id in list.contains { $0.id == id } ? id : nil } ?? list.first?.id }
         item.listings[index].ebayFulfillmentPolicyID = keep(item.listings[index].ebayFulfillmentPolicyID, in: loaded.fulfillment)

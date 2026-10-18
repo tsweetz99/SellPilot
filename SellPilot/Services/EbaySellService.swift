@@ -321,7 +321,10 @@ struct EbaySellService: EbayListingService {
         }
         guard let categoryID = draft.ebayCategoryID, !categoryID.isEmpty else { throw ServiceError.invalid("Choose an eBay category first.") }
         guard !draft.title.trimmingCharacters(in: .whitespaces).isEmpty, draft.price > 0, !photos.isEmpty else { throw ServiceError.invalid("A title, a positive price and at least one photo are required.") }
+        var stage = "checking your policies and location"
+        do {
         let setup = try await ensureSellerSetup()
+        stage = "uploading photos"
         var imageURLs: [String] = []
         for photo in photos.prefix(24) { imageURLs.append(try await uploadImage(photo).absoluteString) }
 
@@ -336,6 +339,7 @@ struct EbaySellService: EbayListingService {
             "product": ["title": String(draft.title.prefix(80)), "description": Self.html(draft.description), "aspects": aspects, "imageUrls": imageURLs],
         ]
         if !conditionNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { item["conditionDescription"] = String(conditionNotes.prefix(1000)) }
+        stage = "saving the item"
         _ = try expect([200, 204], try await sell("PUT", "sell/inventory/v1/inventory_item/\(sku)", json: item))
 
         let offer: [String: Any] = [
@@ -343,10 +347,16 @@ struct EbaySellService: EbayListingService {
             "listingDescription": Self.html(draft.description), "pricingSummary": ["price": ["value": String(format: "%.2f", draft.price), "currency": "USD"]],
             "listingPolicies": ["fulfillmentPolicyId": draft.ebayFulfillmentPolicyID ?? setup.fulfillmentPolicyID, "paymentPolicyId": draft.ebayPaymentPolicyID ?? setup.paymentPolicyID, "returnPolicyId": draft.ebayReturnPolicyID ?? setup.returnPolicyID],
         ]
+        stage = "creating the offer"
         let offerID = try await upsertOffer(offer, sku: sku)
+        stage = "publishing"
         let published = object(try expect([200], try await sell("POST", "sell/inventory/v1/offer/\(offerID)/publish")))
         guard let listingID = published["listingId"] as? String, let url = URL(string: Self.listingURL(configuration.environment, listingID)) else { throw ServiceError.invalid("eBay did not return a listing ID.") }
         return EbayPublishResult(offerID: offerID, listingID: listingID, url: url)
+        } catch let error as ServiceError {
+            // Say which step failed; eBay's own wording alone ("internal error") doesn't.
+            throw ServiceError.invalid("While \(stage): \(error.localizedDescription)")
+        }
     }
 
     static func listingURL(_ environment: EbaySellEnvironment, _ id: String) -> String { environment.listingBase + id }

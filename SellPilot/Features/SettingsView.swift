@@ -38,6 +38,7 @@ struct SettingsView: View {
                     SecureField("eBay Cert ID", text: $ebayCert).textInputAutocapitalization(.never).autocorrectionDisabled()
                     Button("Save eBay keys") {
                         do {
+                            if let problem = EbayKeyCheck.problem(appID: ebayApp, production: true) { message = problem; return }
                             if !ebayApp.isEmpty { try APIKeyStore.save(ebayApp, .ebayAppID) }
                             if !ebayCert.isEmpty { try APIKeyStore.save(ebayCert, .ebayCertID) }
                             ebayApp = ""; ebayCert = ""; hasEbay = EbayCredentials.load() != nil; liveConnection = EbayConnections.make(.production)
@@ -54,6 +55,7 @@ struct SettingsView: View {
                     SecureField("Sandbox user token", text: $sbxToken).textInputAutocapitalization(.never).autocorrectionDisabled()
                     Button("Save sandbox details") {
                         do {
+                            if let problem = EbayKeyCheck.problem(appID: sbxApp, production: false) { message = problem; return }
                             if !sbxApp.isEmpty { try APIKeyStore.save(sbxApp, .ebaySandboxAppID) }
                             if !sbxCert.isEmpty { try APIKeyStore.save(sbxCert, .ebaySandboxCertID) }
                             if !sbxToken.isEmpty { try APIKeyStore.save(sbxToken, .ebaySandboxUserToken) }

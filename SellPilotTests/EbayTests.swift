@@ -142,3 +142,15 @@ final class EbayTests: XCTestCase {
         XCTAssertEqual(filters.count, 2); XCTAssertTrue(filters[0].contains("conditions:{USED}")); XCTAssertEqual(filters[1], "buyingOptions:{FIXED_PRICE},priceCurrency:USD")
     }
 }
+
+final class EbayKeyCheckTests: XCTestCase {
+    func testSandboxIDRejectedForProduction() {
+        XCTAssertNotNil(EbayKeyCheck.problem(appID: "Name-App-SBX-abc123-def", production: true))
+        XCTAssertNil(EbayKeyCheck.problem(appID: " Name-App-PRD-abc123-def\n", production: true))
+    }
+    func testProductionIDRejectedForSandbox() {
+        XCTAssertNotNil(EbayKeyCheck.problem(appID: "Name-App-PRD-abc123-def", production: false))
+        XCTAssertNil(EbayKeyCheck.problem(appID: "Name-App-SBX-abc123-def", production: false))
+        XCTAssertNil(EbayKeyCheck.problem(appID: "", production: true))
+    }
+}

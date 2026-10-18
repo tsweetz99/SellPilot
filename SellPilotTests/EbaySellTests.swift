@@ -145,7 +145,7 @@ final class EbaySellTests: XCTestCase {
             return self.happyRoute(request, body)
         }
         let (draft, photos) = try draft()
-        do { _ = try await service().publish(draft: draft, photos: photos, conditionNotes: ""); XCTFail() } catch { XCTAssertEqual(error.localizedDescription, "eBay: Item specific Voltage is missing. Second problem.") }
+        do { _ = try await service().publish(draft: draft, photos: photos, conditionNotes: ""); XCTFail() } catch { XCTAssertEqual(error.localizedDescription, "While saving the item: eBay: Item specific Voltage is missing. Second problem.") }
         XCTAssertTrue(EbaySellService.failure(401, Data()).localizedDescription.contains("expired"))
         XCTAssertTrue(EbaySellService.failure(500, Data(#"{"errors":[{"errorId":1001,"message":"Invalid access token"}]}"#.utf8)).localizedDescription.contains("expired"))
         XCTAssertEqual(EbaySellService.failure(500, Data()).localizedDescription, "eBay request failed (500).")

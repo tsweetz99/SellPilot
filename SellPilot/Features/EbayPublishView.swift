@@ -64,13 +64,15 @@ struct EbayPublishCard: View {
         policyMenu("Shipping", selection: Binding(get: { draft.ebayFulfillmentPolicyID }, set: { workflow.item.listings[index].ebayFulfillmentPolicyID = $0 }), options: workflow.ebayPolicies.fulfillment)
         policyMenu("Payment", selection: Binding(get: { draft.ebayPaymentPolicyID }, set: { workflow.item.listings[index].ebayPaymentPolicyID = $0 }), options: workflow.ebayPolicies.payment)
         policyMenu("Returns", selection: Binding(get: { draft.ebayReturnPolicyID }, set: { workflow.item.listings[index].ebayReturnPolicyID = $0 }), options: workflow.ebayPolicies.returns)
+        if let problem = workflow.ebayPoliciesProblem { Text(problem).font(.caption).foregroundStyle(.red) }
+        Button("Reload policies") { Task { await workflow.loadEbayPolicies(index) } }.font(.caption).disabled(workflow.busy)
     } }
 
     private func policyMenu(_ title: String, selection: Binding<String?>, options: [EbayPolicy]) -> some View {
         Menu {
             ForEach(options) { option in Button(option.name) { selection.wrappedValue = option.id } }
         } label: {
-            HStack { Text(title).foregroundStyle(.secondary); Spacer(); Text(options.first { $0.id == selection.wrappedValue }?.name ?? (options.isEmpty ? "Loading…" : "Choose")); Image(systemName: "chevron.up.chevron.down").font(.caption) }
+            HStack { Text(title).foregroundStyle(.secondary); Spacer(); Text(options.first { $0.id == selection.wrappedValue }?.name ?? (options.isEmpty ? (workflow.ebayPoliciesProblem == nil ? "Loading…" : "None") : "Choose")); Image(systemName: "chevron.up.chevron.down").font(.caption) }
                 .padding(10).background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
         }.disabled(options.isEmpty || workflow.busy)
     }
