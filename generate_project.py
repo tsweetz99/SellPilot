@@ -11,8 +11,12 @@ def group(folder):
  for p in sorted((root/folder).rglob('*.swift')):
   ref=add(f'isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "{p.relative_to(root/folder)}"; sourceTree = "<group>";')
   refs.append(ref);builds.append(add(f'isa = PBXBuildFile; fileRef = {ref};'))
+ resource_builds=[]
+ for catalog in sorted((root/folder).glob('*.xcassets')):
+  ref=add(f'isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "{catalog.name}"; sourceTree = "<group>";')
+  refs.append(ref);resource_builds.append(add(f'isa = PBXBuildFile; fileRef = {ref};'))
  g=add(f'isa = PBXGroup; path = "{folder}"; sourceTree = "<group>"; children = ({",".join(refs)});')
- return g,builds
+ return g,builds,resource_builds
 groups=[];targets=[];products=[]
 base='SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 17.0; SWIFT_VERSION = 5.0; CLANG_ENABLE_MODULES = YES; CLANG_ENABLE_OBJC_ARC = YES; '
 def configs(extra):
@@ -24,18 +28,18 @@ def configs(extra):
 projectconfig=configs('')
 app=None
 for name,folder,kind in [('SellPilot','SellPilot','application'),('SellPilotTests','SellPilotTests','bundle.unit-test'),('SellPilotUITests','SellPilotUITests','bundle.ui-testing')]:
- g,builds=group(folder);groups.append(g)
+ g,builds,resource_builds=group(folder);groups.append(g)
  ext='app' if kind=='application' else 'xctest'
  product=add(f'isa = PBXFileReference; explicitFileType = {"wrapper.application" if ext=="app" else "wrapper.cfbundle"}; path = {name}.{ext}; sourceTree = BUILT_PRODUCTS_DIR;');products.append(product)
  settings=f'PRODUCT_NAME = "$(TARGET_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = com.sellpilot.{name.lower()}; GENERATE_INFOPLIST_FILE = YES; TARGETED_DEVICE_FAMILY = "1,2"; CODE_SIGN_STYLE = Automatic; MARKETING_VERSION = 0.1; CURRENT_PROJECT_VERSION = 1; '
  if kind=='application':
-  settings+='INFOPLIST_KEY_CFBundleDisplayName = SellPilot; INFOPLIST_KEY_UILaunchScreen_Generation = YES; INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES; INFOPLIST_KEY_NSCameraUsageDescription = "Take photos of items you want to sell."; INFOPLIST_KEY_NSMicrophoneUsageDescription = "Dictate seller notes."; INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe your dictated seller notes."; INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"; '
+  settings+='ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; INFOPLIST_KEY_CFBundleDisplayName = SellPilot; INFOPLIST_KEY_UILaunchScreen_Generation = YES; INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES; INFOPLIST_KEY_NSCameraUsageDescription = "Take photos of items you want to sell."; INFOPLIST_KEY_NSMicrophoneUsageDescription = "Dictate seller notes."; INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe your dictated seller notes."; INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"; '
  elif kind=='bundle.unit-test': settings+='TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SellPilot.app/SellPilot"; BUNDLE_LOADER = "$(TEST_HOST)"; '
  else: settings+='TEST_TARGET_NAME = SellPilot; '
  config=configs(settings)
  sources=add(f'isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ({",".join(builds)}); runOnlyForDeploymentPostprocessing = 0;')
  frameworks=add('isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;')
- resources=add('isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0;')
+ resources=add(f'isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = ({",".join(resource_builds)}); runOnlyForDeploymentPostprocessing = 0;')
  dep=add(f'isa = PBXTargetDependency; target = {app};') if app else None
  target=add(f'isa = PBXNativeTarget; name = {name}; productName = {name}; productReference = {product}; productType = "com.apple.product-type.{kind}"; buildConfigurationList = {config}; buildPhases = ({sources},{frameworks},{resources}); dependencies = ({dep or ""});')
  if app is None: app=target
