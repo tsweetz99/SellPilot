@@ -79,9 +79,17 @@ enum EbaySpecifics {
     static func prefill(item: SellItem, existing: [String: String], aspects: [EbayAspect]) -> [String: String] {
         var result = existing
         func current(_ aspect: EbayAspect) -> String? { result.first { $0.key.caseInsensitiveCompare(aspect.name) == .orderedSame && !$0.value.trimmingCharacters(in: .whitespaces).isEmpty }?.value }
-        for aspect in aspects where aspect.required && current(aspect) == nil {
+        // The catalog is right about the ISBN and author but patchy on publisher and year (editions disagree), so those two
+        // are filled only when eBay requires them, where the seller sees and can correct them.
+        let bookNames: Set<String> = ["isbn", "author", "book title"]
+        for aspect in aspects where (aspect.required || bookNames.contains(aspect.name.lowercased())) && current(aspect) == nil {
             let known: String
             switch aspect.name.lowercased() {
+            case "isbn": known = item.isbn ?? ""
+            case "author": known = item.bookDetails?.authors.joined(separator: ", ") ?? ""
+            case "publisher": known = item.bookDetails?.publisher ?? ""
+            case "publication year": known = item.bookDetails?.year ?? ""
+            case "book title": known = item.bookDetails?.title ?? ""
             case "brand": known = item.brand.lowercased() == "unknown" ? "" : item.brand
             case "model", "mpn", "manufacturer part number": known = item.model
             case "color", "colour": known = item.color

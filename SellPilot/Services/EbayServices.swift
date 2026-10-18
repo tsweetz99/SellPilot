@@ -153,8 +153,14 @@ struct EbayBrowseMarketResearchService: MarketResearchService {
 
     func research(item: SellItem) async throws -> [MarketComparable] {
         let queries = Self.queries(for: item)
-        guard !queries.isEmpty else { throw ServiceError.invalid("Add a product name to look up comparable listings.") }
+        guard !queries.isEmpty || item.isbn != nil else { throw ServiceError.invalid("Add a product name to look up comparable listings.") }
         var best: [MarketComparable] = []
+        // A book's ISBN finds exactly that edition, which beats matching titles. Fall back to titles if too few turn up.
+        if let isbn = item.isbn.flatMap(ISBN.normalize) {
+            let exact = ((try? await search(query: "", gtin: isbn, condition: item.condition)) ?? []).map { var comparable = $0; comparable.verifiedMatch = true; return comparable }
+            if exact.count >= configuration.minimumListings { return exact }
+            best = exact
+        }
         for query in queries {
             let found = try await search(query: query, condition: item.condition)
             if found.count >= configuration.minimumListings { return found }
@@ -181,10 +187,10 @@ struct EbayBrowseMarketResearchService: MarketResearchService {
         switch condition { case .new: "conditions:{NEW}"; case .excellent, .good, .fair: "conditions:{USED}"; case .parts: "conditionIds:{7000}" }
     }
 
-    func makeSearchRequest(query: String, condition: ItemCondition, token: String, filterByCondition: Bool = true) -> URLRequest {
+    func makeSearchRequest(query: String, gtin: String? = nil, condition: ItemCondition, token: String, filterByCondition: Bool = true) -> URLRequest {
         var components = URLComponents(url: configuration.baseURL.appending(path: "buy/browse/v1/item_summary/search"), resolvingAgainstBaseURL: false)!
         components.queryItems = [
-            URLQueryItem(name: "q", value: query),
+            gtin.map { URLQueryItem(name: "gtin", value: $0) } ?? URLQueryItem(name: "q", value: query),
             URLQueryItem(name: "limit", value: String(configuration.resultLimit)),
             URLQueryItem(name: "filter", value: (["buyingOptions:{FIXED_PRICE}", "priceCurrency:USD"] + (filterByCondition ? [Self.conditionFilter(for: condition)] : [])).joined(separator: ",")),
         ]
@@ -195,11 +201,11 @@ struct EbayBrowseMarketResearchService: MarketResearchService {
         return request
     }
 
-    private func search(query: String, condition: ItemCondition) async throws -> [MarketComparable] {
+    private func search(query: String, gtin: String? = nil, condition: ItemCondition) async throws -> [MarketComparable] {
         var refreshed = false, filterByCondition = true
         while true {
             let token = try await tokens.accessToken(forceRefresh: refreshed)
-            let (data, response) = try await EbayHTTP.perform(makeSearchRequest(query: query, condition: condition, token: token, filterByCondition: filterByCondition), session: session)
+            let (data, response) = try await EbayHTTP.perform(makeSearchRequest(query: query, gtin: gtin, condition: condition, token: token, filterByCondition: filterByCondition), session: session)
             if response.statusCode == 401, !refreshed { refreshed = true; continue }
             // If eBay rejects the condition filter for some category, search without it rather than finding nothing.
             if response.statusCode == 400, filterByCondition { filterByCondition = false; continue }

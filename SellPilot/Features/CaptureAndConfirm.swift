@@ -43,6 +43,7 @@ struct CaptureView: View {
             workflow.item.photos.append(photo)
             if workflow.item.coverPhotoID == nil { workflow.item.coverPhotoID = photo.id }
             workflow.save()
+            Task { await workflow.scanForISBN(in: data) }
         } catch { workflow.error = "Could not save this photo on your device: \(error.localizedDescription)" }
     }
     private func move(_ index: Int, by offset: Int) { workflow.item.photos.swapAt(index, index + offset) }
@@ -50,6 +51,7 @@ struct CaptureView: View {
 struct IdentificationView: View {
     @Bindable var workflow: SellingWorkflow
     private let categories = SellItem.categories
+    @State private var isbnText = ""
     var body: some View { VStack(alignment: .leading, spacing: 16) {
         Text("Is this right?").font(.largeTitle.bold())
         if let photo = workflow.item.orderedPhotos.first { PhotoView(photo: photo) }
@@ -68,6 +70,13 @@ struct IdentificationView: View {
             TextField("Subcategory", text: $workflow.item.subcategory); TextField("Color", text: $workflow.item.color)
             Picker("Condition", selection: $workflow.item.condition) { ForEach(ItemCondition.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
         }
+        PilotCard {
+            HStack {
+                TextField("ISBN (books)", text: $isbnText).keyboardType(.numbersAndPunctuation).autocorrectionDisabled().accessibilityIdentifier("isbnField")
+                Button("Look up") { Task { await workflow.lookUpISBN(isbnText) } }.buttonStyle(.bordered).disabled(isbnText.trimmingCharacters(in: .whitespaces).isEmpty && workflow.item.isbn == nil)
+            }
+            Text(workflow.isbnStatus ?? (workflow.item.isbn.map { "ISBN \($0)" } ?? "Books: photograph the barcode on the back cover and SellPilot reads it, or type the ISBN.")).font(.caption).foregroundStyle(.secondary)
+        }.onAppear { isbnText = workflow.item.isbn ?? "" }.onChange(of: workflow.item.isbn) { _, isbn in isbnText = isbn ?? isbnText }
         Text("Other possible matches").font(.headline)
         ForEach(workflow.item.identification?.alternateMatches ?? []) { match in Button { workflow.apply(match) } label: { HStack { Text(match.title); Spacer(); Image(systemName: "arrow.up.left") }.padding(14) }.buttonStyle(.bordered) }
     } }

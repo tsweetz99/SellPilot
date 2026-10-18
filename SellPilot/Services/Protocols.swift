@@ -38,6 +38,8 @@ struct AppServices {
     /// Real eBay publishing (sandbox for now); nil until sandbox keys and a user token are configured.
     var ebay: (any EbayListingService)? = nil
     var specifics: (any ItemSpecificsService)? = nil
+    /// Book facts from an ISBN; nil in UI tests.
+    var books: (any BookCatalogService)? = nil
     /// eBay is set up enough to connect, but no seller is signed in (and no test token is saved).
     var ebayNeedsSignIn = false
     /// True when live publishing is switched on, so screens name the real eBay instead of the sandbox.
@@ -54,6 +56,7 @@ extension AppServices {
             services.identification = ClaudeIdentificationService(configuration: .init(apiKey: key))
         }
         let testing = ProcessInfo.processInfo.arguments.contains("--ui-testing")
+        if !testing { services.books = PublicBookCatalog() }
         // With a token server configured, eBay application tokens come from it (the Cert ID can then stay off the device).
         // A Cert ID still saved on the device is used as a fallback, so the switch never leaves a gap.
         let server = APIKeyStore.load(.ebayAuthProxy).flatMap(URL.init(string:))
