@@ -60,6 +60,7 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 if let store { backupSection(store) }
+                Section { Link("Privacy policy", destination: PrivacyPolicy.url) } footer: { Text("What SellPilot keeps on your phone and what it sends to other services.") }
                 Section {
                     SecureField("Anthropic API key", text: $key).textInputAutocapitalization(.never).autocorrectionDisabled()
                     Button("Save key") {
@@ -160,3 +161,5 @@ struct EbayConnectRow: View {
         }
     }
 }
+
+enum PrivacyPolicy { static let url = URL(string: "https://sellpilot-auth.netlify.app/privacy/")! }

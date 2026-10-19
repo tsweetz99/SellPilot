@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SellPilot privacy policy</title>
+  <link rel="stylesheet" href="privacy.css">
+</head>
+<body>
+<main>
+  <h1>SellPilot privacy policy</h1>
+  <p class="meta">Effective October 19, 2026. SellPilot is published by Tidewright Studios. Questions: <a href="mailto:privacy@tidewrightstudios.com">privacy@tidewrightstudios.com</a>.</p>
+
+  <p>SellPilot helps you photograph things you want to sell, work out a price, and create the listing. This page explains what the app does with your information. The short version: your items and photos stay on your phone, the app has no accounts, no advertising and no analytics, and the only information that leaves your phone is what each feature below needs to work.</p>
+
+  <h2>What stays on your phone</h2>
+  <ul>
+    <li><strong>Your items:</strong> photos, titles, descriptions, notes, prices, drafts and listing status. They are stored in the app's private storage on your device and are not uploaded to any SellPilot server.</li>
+    <li><strong>Your keys and sign-ins:</strong> any API key you enter, your eBay sign-in tokens, and a random install code are stored in the iPhone Keychain.</li>
+    <li><strong>Settings:</strong> your ship-from ZIP code and your preferences.</li>
+  </ul>
+  <p>Deleting the app deletes your items and photos from the phone. SellPilot can save a backup file to a place you choose (such as iCloud Drive). That file is yours; it contains your items and photos but not your keys or eBay sign-in.</p>
+
+  <h2>What is sent to other services, and when</h2>
+  <table>
+    <thead><tr><th>Service</th><th>What is sent</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td data-label="Service">Anthropic (Claude)</td><td data-label="What is sent">The photos you choose to analyze, and the description you wrote about an item.</td><td data-label="Why">To identify the item and extract facts such as brand, model or color. Sent only when you tap Analyze. Anthropic's handling of that data is described in its own privacy policy and API terms.</td></tr>
+      <tr><td data-label="Service">eBay</td><td data-label="What is sent">Search terms from your item (title, brand, model or ISBN) to find similar listings. When you publish: your title, description, photos, price, category, item details and ship-from ZIP, plus the seller sign-in you approve.</td><td data-label="Why">To research prices and to create, change and end your eBay listing. eBay's privacy notice applies to what it receives.</td></tr>
+      <tr><td data-label="Service">SellPilot sign-in server (hosted on Netlify)</td><td data-label="What is sent">During eBay sign-in and renewal: the one-time eBay authorization code or refresh token, and the random install code.</td><td data-label="Why">To exchange it with eBay without keeping eBay's app secret on your phone. The server does not store your tokens or any item data. It keeps only request counts per install code to limit abuse, and Netlify keeps standard server logs (such as IP address and time) under its own policy.</td></tr>
+      <tr><td data-label="Service">Open Library and Google Books</td><td data-label="What is sent">The ISBN of a book.</td><td data-label="Why">To fill in the title, author and publisher. Nothing else is sent.</td></tr>
+      <tr><td data-label="Service">Apple</td><td data-label="What is sent">Audio you dictate, if you use dictation for a note.</td><td data-label="Why">Speech recognition is provided by Apple and may be processed on Apple's servers under Apple's privacy policy. Dictation is optional and you can type instead.</td></tr>
+    </tbody>
+  </table>
+  <p>Reading a barcode in a photo happens on your phone. Photos are sent only to the service named in the table, for the purpose shown.</p>
+
+  <h2>What SellPilot does not do</h2>
+  <ul>
+    <li>It does not create accounts, show ads, or include analytics or tracking tools.</li>
+    <li>It does not sell or share your information for advertising.</li>
+    <li>It does not read your contacts, location or other photos. It sees only photos you take in the app or pick yourself.</li>
+    <li>It does not send eBay's listing data to an AI service.</li>
+  </ul>
+
+  <h2>Permissions the app may ask for</h2>
+  <ul>
+    <li><strong>Camera and photo library:</strong> to add photos of items.</li>
+    <li><strong>Microphone and speech recognition:</strong> only if you use dictation.</li>
+  </ul>
+  <p>You can change these at any time in iPhone Settings.</p>
+
+  <h2>Your choices and how to delete your data</h2>
+  <ul>
+    <li>Delete an item inside the app, or delete the app to remove everything stored on the phone. Remove saved keys under Settings in the app.</li>
+    <li>To stop SellPilot acting on your eBay account, disconnect it in the app and remove SellPilot under your eBay account's permissions. Listings already published stay on eBay until you end them.</li>
+    <li>Data held by Anthropic, eBay, Netlify, Apple or a book catalog is governed by their policies; contact them to access or delete it.</li>
+    <li>Because SellPilot keeps no copy of your items, there is nothing for us to export or delete on our side. Write to the address above with any request and we will respond.</li>
+  </ul>
+
+  <h2>Security</h2>
+  <p>Photos are stored with iOS file protection, and keys and tokens in the Keychain. Network requests use encrypted connections. No method is perfectly secure, so keep your phone locked and updated.</p>
+
+  <h2>Children</h2>
+  <p>SellPilot is for adults who can hold an eBay seller account. It is not directed to children under 13 and does not knowingly collect their information.</p>
+
+  <h2>Changes</h2>
+  <p>If the app starts using your information in a new way, this page will be updated first and the effective date above will change.</p>
+</main>
+</body>
+</html>
