@@ -162,4 +162,4 @@ struct EbayConnectRow: View {
     }
 }
 
-enum PrivacyPolicy { static let url = URL(string: "https://sellpilot-auth.netlify.app/privacy/")! }
+enum PrivacyPolicy { static let url = URL(string: "https://tidewrightstudios.com/sellpilot/privacy/")! }
