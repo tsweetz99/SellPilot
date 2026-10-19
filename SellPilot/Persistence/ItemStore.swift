@@ -37,6 +37,19 @@ import Foundation
         guard loadedCleanly else { return 0 }
         return PhotoStorage.shared.sweep(keeping: Set(items.flatMap { $0.photos.map(\.id) }))
     }
+    /// Puts back items from a backup exactly as they were saved (their dates are kept), then reloads the list.
+    func restore(_ restored: [SellItem]) throws {
+        do {
+            for item in restored {
+                let id = item.id
+                let payload = try JSONEncoder().encode(item)
+                if let row = try context.fetch(FetchDescriptor<StoredSellItem>(predicate: #Predicate { $0.id == id })).first { row.payload = payload; row.updatedAt = item.updatedAt }
+                else { context.insert(try StoredSellItem(item: item)) }
+            }
+            try context.save()
+        } catch { context.rollback(); throw error }
+        reload()
+    }
     @discardableResult func save(_ value: SellItem) -> Bool {
         do {
             var item = value; item.updatedAt = Date()

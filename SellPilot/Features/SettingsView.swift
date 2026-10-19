@@ -1,7 +1,15 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    /// Needed for backup and restore; screens without the item list leave it nil and the Backup section is hidden.
+    var store: ItemStore? = nil
+    @State private var backupURL: URL?
+    @State private var backingUp = false
+    @State private var restoring = false
+    @State private var showRestorePicker = false
+    @State private var backupMessage: String?
     @State private var key = ""
     @State private var hasKey = APIKeyStore.load() != nil
     @State private var message: String?
@@ -20,9 +28,38 @@ struct SettingsView: View {
     @State private var liveOn = LiveSettings.enabled
     @State private var liveConnection = EbayConnections.make(.production)
 
+    private func backupSection(_ store: ItemStore) -> some View {
+        Section {
+            Button(backingUp ? "Preparing…" : "Back up all items") {
+                Task {
+                    backingUp = true; defer { backingUp = false }
+                    do { backupURL = try await BackupService.export(store: store); backupMessage = "Backup ready. Tap Save backup file to put it in Files or iCloud Drive." }
+                    catch { backupMessage = "The backup couldn't be created: \(error.localizedDescription)" }
+                }
+            }.disabled(backingUp || restoring || store.items.isEmpty)
+            if let backupURL { ShareLink("Save backup file", item: backupURL) }
+            Button(restoring ? "Restoring…" : "Restore from a backup file") { showRestorePicker = true }.disabled(backingUp || restoring)
+            if let backupMessage { Text(backupMessage).font(.caption).foregroundStyle(.secondary) }
+        } header: { Text("Backup") } footer: {
+            Text("\(BackupService.lastBackup.map { "Last backup: \($0.formatted(date: .abbreviated, time: .shortened))." } ?? "You haven't backed up yet.") A backup holds your items, drafts and photos, not your API keys or eBay sign-in. Deleting the app deletes its data, so back up first. Restoring never replaces an item with an older copy.")
+        }
+    }
+
+    private func handleRestore(_ result: Result<URL, Error>) {
+        guard let store, case .success(let url) = result else { return }
+        Task {
+            restoring = true; defer { restoring = false }
+            do {
+                let summary = try await BackupService.restore(from: url, into: store)
+                backupMessage = "Restored \(summary.added) new and \(summary.updated) updated item\(summary.added + summary.updated == 1 ? "" : "s") with \(summary.photos) photo\(summary.photos == 1 ? "" : "s")." + (summary.kept > 0 ? " Kept \(summary.kept) newer item\(summary.kept == 1 ? "" : "s") already on this phone." : "")
+            } catch { backupMessage = error.localizedDescription }
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
+                if let store { backupSection(store) }
                 Section {
                     SecureField("Anthropic API key", text: $key).textInputAutocapitalization(.never).autocorrectionDisabled()
                     Button("Save key") {
@@ -101,6 +138,7 @@ struct SettingsView: View {
                 }
                 if let message { Section { Text(message).font(.footnote) } }
             }
+            .fileImporter(isPresented: $showRestorePicker, allowedContentTypes: [.data], onCompletion: handleRestore)
             .navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }
         }

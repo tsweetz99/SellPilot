@@ -46,7 +46,7 @@ struct WorkflowView: View {
                 if workflow.reconnectNeeded { Button("Open Settings") { workflow.error = nil; workflow.reconnectNeeded = false; showSettings = true } }
                 Button(workflow.reconnectNeeded ? "Not now" : "OK", role: .cancel) { workflow.error = nil; workflow.reconnectNeeded = false }
             } message: { Text(workflow.error ?? "") }
-            .sheet(isPresented: $showSettings, onDismiss: { workflow.reloadServices() }) { SettingsView() }
+            .sheet(isPresented: $showSettings, onDismiss: { workflow.reloadServices() }) { SettingsView(store: workflow.store) }
             .alert("SellPilot", isPresented: Binding(get: { workflow.notice != nil }, set: { if !$0 { workflow.notice = nil } })) { Button("OK") { workflow.notice = nil } } message: { Text(workflow.notice ?? "") }
             .confirmationDialog("Confirm you published this item on your chosen marketplaces.", isPresented: $confirmActive, titleVisibility: .visible) { Button("Confirm published") { do { try workflow.activate(); dismiss() } catch { workflow.error = error.localizedDescription } } }
             .alert("Record the sale", isPresented: $showSold) { TextField("Sold price", text: $soldPrice).keyboardType(.decimalPad); Button("Save sale") { guard let price = Double(soldPrice) else { workflow.error = "Enter a valid sold price."; return }; Task { await workflow.markSold(price: price); if workflow.error == nil { dismiss() } } }; Button("Cancel", role: .cancel) {} } message: { Text("Enter the amount you actually received.") }
