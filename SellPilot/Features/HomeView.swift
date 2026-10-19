@@ -21,13 +21,18 @@ struct HomeView: View {
                         metric("Drafts", "\(drafts.count)", "pencil", opens: .drafts)
                         metric("Recorded sales", store.items.reduce(0) { $0 + ($1.soldPrice ?? 0) }.money, "dollarsign.circle", opens: .sold)
                     }
+                    if BackupService.needsReminder(itemCount: store.items.count) {
+                        Button { showSettings = true } label: {
+                            PilotCard { Label("Back up your items", systemImage: "externaldrive.badge.icloud").font(.headline); Text("Your items and photos live only on this phone. Tap to save a backup.").font(.caption).foregroundStyle(.secondary) }
+                        }.buttonStyle(.plain).accessibilityIdentifier("backupReminder")
+                    }
                     Text("Recent items").font(.title2.bold())
                     if store.items.isEmpty { PilotCard { Image(systemName: "camera.viewfinder").font(.largeTitle).foregroundStyle(PilotTheme.accent); Text("Your next sale starts with a photo.").font(.headline); Text("Add an item to get suggested prices and a listing you can share.").foregroundStyle(.secondary) } }
                     ForEach(store.items.prefix(5)) { item in Button { selectedItem = item } label: { ItemCard(item: item) }.buttonStyle(.plain) }
                 }.padding(22) }.background(PilotTheme.background).toolbar(.hidden, for: .navigationBar)
             }.tabItem { Label("Home", systemImage: "house.fill") }.tag(Tab.home)
             NavigationStack { InventoryView(store: store, filter: $inventoryFilter, onSelect: { selectedItem = $0 }) }.tabItem { Label("My Stuff", systemImage: "square.grid.2x2.fill") }.tag(Tab.stuff)
-        }.sheet(isPresented: $showSettings) { SettingsView() }
+        }.sheet(isPresented: $showSettings) { SettingsView(store: store) }
             .sheet(item: $selectedItem) { item in WorkflowView(workflow: SellingWorkflow(item: item, store: store, services: AppServices.make())) }
             .alert("Storage issue", isPresented: Binding(get: { store.error != nil }, set: { if !$0 { store.error = nil } })) { Button("OK") { store.error = nil } } message: { Text(store.error ?? "") }
     }

@@ -27,7 +27,7 @@ final class PhotoStorage: @unchecked Sendable {
         return PhotoStorage(root: base.appendingPathComponent("SellPilotPhotos", isDirectory: true))
     }
 
-    private func url(id: UUID, kind: Kind) -> URL { root.appendingPathComponent("\(id.uuidString).\(kind.rawValue)") }
+    func url(id: UUID, kind: Kind) -> URL { root.appendingPathComponent("\(id.uuidString).\(kind.rawValue)") }
 
     func write(_ data: Data, id: UUID, kind: Kind) throws {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
