@@ -60,3 +60,51 @@ Real listings use the **Production** keyset. In addition to the Sandbox setup ab
 1. eBay developer portal → Application Keys → **Production** → User Tokens: edit the redirect URL entry so its accepted and declined URLs are `https://<your-site>/ebay/callback/`, with OAuth enabled (the same bounce page serves both). Note its **RuName**.
 2. Netlify variables: `EBAY_PRODUCTION_RUNAME` (that RuName). `EBAY_PRODUCTION_APP_ID` and `EBAY_PRODUCTION_CERT_ID` are already there if app tokens are enabled. Redeploy.
 3. In the app, see `Docs/GoingLive.md`.
+
+## The AI service (`/api/ai`)
+
+The same site also runs SellPilot's hosted AI, so people do not need their own Anthropic key. The app sends photos (or the
+seller's own item description) to `POST /api/ai`; the function calls Claude on the studio's account and returns the answer.
+
+**How it protects the account**
+- **The server owns the instructions.** Callers send only `{"task":"identify","photos":[{"data":"<base64 JPEG>"}]}` or
+  `{"task":"facts","description":"..."}`. The prompt, tool, model and token limit are fixed in `lib/aiPrompts.mjs` and `lib/ai.mjs`, so
+  the endpoint cannot be used as a general-purpose Claude proxy. A test in the app's suite fails if the app's copy of the
+  instructions and this one drift apart.
+- **Three spending allowances**, counted in units (an identification costs 3, a fact lookup 1) and checked together, with the
+  counts kept in Netlify Blobs: per install per day, per network address per hour, and one for the whole service per day. The
+  whole-service one is the cap on your bill. If the counts cannot be read, nothing is spent (503).
+- **An off switch.** Nothing runs unless `AI_ENABLED=true`. Set it to anything else and every call answers "paused".
+- **Photos are checked** before anything is spent: at most 6, JPEG only, 1.2 MB each and 3.5 MB together (Netlify allows a 6 MB
+  request body and 60 seconds per call; neither can be raised).
+- **Nothing is stored or logged** except counts: `{"event":"ai","task":"identify","status":200,"photos":2,"ms":4100}`. No photos,
+  descriptions, answers or keys. A test checks this.
+
+**Setup (Site configuration → Environment variables, then redeploy)**
+
+| Variable | Needed | Meaning |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | yes | The studio's key. Mark it as a secret value. Never paste it into chat or commit it. |
+| `AI_ENABLED` | yes | `true` to switch the service on. |
+| `AI_UNITS_PER_DAY` | no (1500) | Whole-service daily cap. 1500 is about 500 identifications a day. **This is your spending dial.** |
+| `AI_UNITS_PER_INSTALL_PER_DAY` | no (60) | About 20 identifications per install per day. |
+| `AI_UNITS_PER_ADDRESS_PER_HOUR` | no (90) | Per network address, so inventing install codes does not help. |
+| `AI_MODEL_IDENTIFY` / `AI_MODEL_FACTS` | no | Defaults `claude-sonnet-5-5` and `claude-haiku-4-5-20251001`. |
+| `AI_TIMEOUT_MS` | no (45000) | Stay under Netlify's 60 seconds. |
+| `AI_BLOCKED_INSTALL_KEYS` | no | Comma-separated install codes to refuse. |
+
+Also set a **monthly spend limit** in the Anthropic console (Settings, then Limits). The daily cap bounds the worst case; the
+console limit is the backstop.
+
+**Checking it works** (uses one real identification; the script never prints the key):
+
+```bash
+python3 scripts/ai_check.py ~/Pictures/some-item.jpg
+```
+
+Expected: `200` and a title, brand and category. `503 "paused"` means `AI_ENABLED` is not `true` or the key is missing; `429` means an
+allowance is used up; `422` means Claude rejected the photo.
+
+**Not in this version:** proof that a request comes from a genuine SellPilot (Apple App Attest). The install code and the address
+and global allowances limit the damage a script can do, but they do not stop one. Add App Attest before the app is widely
+used or if the service-wide cap is ever hit by traffic that is not real.

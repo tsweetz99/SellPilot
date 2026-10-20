@@ -18,9 +18,9 @@ struct ClaudeIdentificationService: ProductIdentificationService {
 
     var disclosure: String? { "To identify your item, the photos you analyze are sent to Anthropic's Claude service." }
 
-    private static let toolName = "report_identification"
+    static let toolName = "report_identification"
 
-    private static let systemPrompt = """
+    static let systemPrompt = """
     You identify second-hand items for a seller's marketplace listing, using only the seller's photos. \
     Report only what the photos support. Read labels, rating plates and model stickers when legible and list the text you actually read in visible_text. \
     Never invent a model number: if none is legible and you are not certain, leave model_number null. \
@@ -105,7 +105,10 @@ struct ClaudeIdentificationService: ProductIdentificationService {
         }
     }
 
-    func parse(_ data: Data, photoCount: Int) throws -> ProductIdentification {
+    func parse(_ data: Data, photoCount: Int) throws -> ProductIdentification { try Self.parse(data, photoCount: photoCount, provider: configuration.model) }
+
+    /// Shared with the hosted service, which returns the same tool answer.
+    static func parse(_ data: Data, photoCount: Int, provider: String) throws -> ProductIdentification {
         guard let inputData = ClaudeAPI.toolInput(named: Self.toolName, in: data), let payload = try? JSONDecoder().decode(Payload.self, from: inputData) else {
             throw ServiceError.invalid("The identification result could not be read. Try again.")
         }
@@ -127,6 +130,6 @@ struct ClaudeIdentificationService: ProductIdentificationService {
             detectedCondition: payload.condition.flatMap(ItemCondition.init(rawValue:)) ?? .good,
             possibleModelNumber: payload.modelNumber.flatMap { $0.isEmpty ? nil : $0 },
             confidenceScore: confidence, alternateMatches: Array(alternates), recognizedAttributes: attributes,
-            provider: configuration.model)
+            provider: provider)
     }
 }

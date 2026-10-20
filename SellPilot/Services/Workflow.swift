@@ -135,7 +135,7 @@ import Observation
         let aspects = try await ebay.aspects(for: category.id)
         var specifics = EbaySpecifics.prefill(item: item, existing: item.listings[index].itemSpecifics, aspects: aspects)
         // Claude only sees the seller's own description; matching to eBay's names and allowed values happens here, on the device.
-        let facts = (try? await services.specifics?.facts(for: item)) ?? [:]
+        let facts = AIConsent.given ? ((try? await services.specifics?.facts(for: item)) ?? [:]) : [:]
         specifics = EbaySpecifics.fill(aspects: aspects, existing: specifics, facts: facts, item: item)
         ebayAspects = aspects
         item.listings[index].ebayCategoryID = category.id; item.listings[index].ebayCategoryName = category.path

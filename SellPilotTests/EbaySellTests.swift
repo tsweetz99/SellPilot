@@ -26,7 +26,9 @@ private final class SellStub: URLProtocol {
 
 final class EbaySellTests: XCTestCase {
     fileprivate typealias Reply = SellStub.Reply
+    private var priorConsent = AIConsent.given
     override func setUp() {
+        priorConsent = AIConsent.given; AIConsent.given = true   // the fact lookups these tests exercise need the seller's consent
         SellStub.log = []; SellStub.route = nil
         PhotoStorage.shared = PhotoStorage(root: FileManager.default.temporaryDirectory.appendingPathComponent("photos-\(UUID().uuidString)"))
     }
@@ -309,6 +311,19 @@ final class EbaySellTests: XCTestCase {
         XCTAssertEqual(SellStub.log.filter { $0.path == "/sell/account/v1/fulfillment_policy" }.count, 1, "the same rejected token is not sent twice for the same request")
         XCTAssertFalse(SellStub.log.contains { $0.path.contains("inventory_item") || $0.path.hasSuffix("/publish") }, "nothing was published")
         XCTAssertTrue(EbaySellService.failure(401, Data()) is EbayAuthError); XCTAssertFalse(EbaySellService.failure(500, Data()) is EbayAuthError)
+    }
+
+    override func tearDown() { AIConsent.given = priorConsent }
+
+    @MainActor func testNoDescriptionIsSentToAnAIServiceWithoutConsent() async throws {
+        AIConsent.given = false
+        let ebay = FakeEbay(); let flow = try workflow(ebay)
+        await flow.prepareEbayListing(0)
+        XCTAssertNil(flow.item.listings[0].itemSpecifics["Voltage"], "facts come from an AI service, which the seller has not allowed")
+        AIConsent.given = true
+        flow.ebayAspects = []; flow.item.listings[0].itemSpecifics = [:]
+        await flow.prepareEbayListing(0)
+        XCTAssertEqual(flow.item.listings[0].itemSpecifics["Voltage"], "20V")
     }
 
     @MainActor func testOnlySignInProblemsOfferToOpenSettings() async throws {
