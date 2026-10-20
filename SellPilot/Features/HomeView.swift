@@ -7,15 +7,16 @@ struct HomeView: View {
     @State private var inventoryFilter = InventoryFilter.active
     @State private var selectedItem: SellItem?
     @State private var showSettings = false
+    @Environment(\.dynamicTypeSize) private var textSize
     var body: some View {
         TabView(selection: $tab) {
             NavigationStack {
                 ScrollView { VStack(alignment: .leading, spacing: 24) {
-                    HStack { Image(systemName: "paperplane.fill").foregroundStyle(PilotTheme.accent); Text("SELLPILOT").font(.headline).tracking(3); Spacer(); Button { showSettings = true } label: { Text(APIKeyStore.load() == nil ? "MVP • MOCK AI" : "MVP • AI ON").font(.caption2.bold()).foregroundStyle(.secondary); Image(systemName: "gearshape").foregroundStyle(.secondary) }.accessibilityLabel("Settings") }
-                    VStack(alignment: .leading, spacing: 10) { Text("Less effort.\nMore sold.").font(.system(size: 42, weight: .bold, design: .rounded)); Text("Give your unused things a fresh start.").foregroundStyle(.secondary) }
+                    header
+                    VStack(alignment: .leading, spacing: 10) { Text("Less effort.\nMore sold.").font(.system(.largeTitle, design: .rounded).weight(.bold)).minimumScaleFactor(0.7); Text("Give your unused things a fresh start.").foregroundStyle(PilotTheme.muted) }
                     PrimaryButton(title: "Sell Something", icon: "camera.fill") { let item = SellItem(); if store.save(item) { selectedItem = item } }.accessibilityIdentifier("sellSomething")
-                    HStack { Image(systemName: "sparkles"); Text("Photograph. Confirm. Price. Publish.") }.font(.subheadline).foregroundStyle(.secondary)
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    HStack { Image(systemName: "sparkles"); Text("Photograph. Confirm. Price. Publish.") }.font(.subheadline).foregroundStyle(PilotTheme.muted)
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: textSize.isAccessibilitySize ? 1 : 2), spacing: 12) {
                         metric("Active listings", "\(store.items.filter { $0.status == .active }.count)", "tag", opens: .active)
                         metric("Sold items", "\(store.items.filter { $0.status == .sold }.count)", "checkmark.circle", opens: .sold)
                         metric("Drafts", "\(drafts.count)", "pencil", opens: .drafts)
@@ -23,11 +24,11 @@ struct HomeView: View {
                     }
                     if BackupService.needsReminder(itemCount: store.items.count) {
                         Button { showSettings = true } label: {
-                            PilotCard { Label("Back up your items", systemImage: "externaldrive.badge.icloud").font(.headline); Text("Your items and photos live only on this phone. Tap to save a backup.").font(.caption).foregroundStyle(.secondary) }
+                            PilotCard { Label("Back up your items", systemImage: "externaldrive.badge.icloud").font(.headline); Text("Your items and photos live only on this phone. Tap to save a backup.").font(.caption).foregroundStyle(PilotTheme.muted) }
                         }.buttonStyle(.plain).accessibilityIdentifier("backupReminder")
                     }
                     Text("Recent items").font(.title2.bold())
-                    if store.items.isEmpty { PilotCard { Image(systemName: "camera.viewfinder").font(.largeTitle).foregroundStyle(PilotTheme.accent); Text("Your next sale starts with a photo.").font(.headline); Text("Add an item to get suggested prices and a listing you can share.").foregroundStyle(.secondary) } }
+                    if store.items.isEmpty { PilotCard { Image(systemName: "camera.viewfinder").font(.largeTitle).foregroundStyle(PilotTheme.accent); Text("Your next sale starts with a photo.").font(.headline); Text("Add an item to get suggested prices and a listing you can share.").foregroundStyle(PilotTheme.muted) } }
                     ForEach(store.items.prefix(5)) { item in Button { selectedItem = item } label: { ItemCard(item: item) }.buttonStyle(.plain) }
                 }.padding(22) }.background(PilotTheme.background).toolbar(.hidden, for: .navigationBar)
             }.tabItem { Label("Home", systemImage: "house.fill") }.tag(Tab.home)
@@ -36,13 +37,27 @@ struct HomeView: View {
             .sheet(item: $selectedItem) { item in WorkflowView(workflow: SellingWorkflow(item: item, store: store, services: AppServices.make())) }
             .alert("Storage issue", isPresented: Binding(get: { store.error != nil }, set: { if !$0 { store.error = nil } })) { Button("OK") { store.error = nil } } message: { Text(store.error ?? "") }
     }
+    /// Brand on the left and Settings on the right. At the largest text sizes they stack so nothing breaks mid-word.
+    private var header: some View {
+        let brand = HStack { Image(systemName: "paperplane.fill").foregroundStyle(PilotTheme.accent).accessibilityHidden(true); Text("SELLPILOT").font(.headline).tracking(3).lineLimit(1).minimumScaleFactor(0.6) }
+        let settings = Button { showSettings = true } label: {
+            HStack(spacing: 8) {
+                Text(APIKeyStore.load() == nil ? "MVP • MOCK AI" : "MVP • AI ON").font(.caption.bold()).foregroundStyle(PilotTheme.muted).lineLimit(1).minimumScaleFactor(0.7)
+                Image(systemName: "gearshape").foregroundStyle(PilotTheme.muted)
+            }.frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+        }.accessibilityLabel("Settings")
+        return Group {
+            if textSize.isAccessibilitySize { VStack(alignment: .leading, spacing: 4) { brand; settings } }
+            else { HStack { brand; Spacer(); settings } }
+        }
+    }
     private var drafts: [SellItem] { store.items.filter { $0.status == .draft || $0.status == .ready } }
     /// Tapping a tile opens My Stuff on the matching list.
     private func metric(_ title: String, _ value: String, _ symbol: String, opens filter: InventoryFilter) -> some View {
         Button { inventoryFilter = filter; tab = .stuff } label: {
             PilotCard {
-                HStack { Image(systemName: symbol).foregroundStyle(PilotTheme.accent); Spacer(); Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.tertiary) }
-                Text(value).font(.title.bold()); Text(title).font(.caption).foregroundStyle(.secondary)
+                HStack { Image(systemName: symbol).foregroundStyle(PilotTheme.accent); Spacer(); Image(systemName: "chevron.right").font(.caption.bold()).foregroundStyle(.tertiary).accessibilityHidden(true) }
+                Text(value).font(.title.bold()); Text(title).font(.caption).foregroundStyle(PilotTheme.muted)
             }
         }.buttonStyle(.plain).accessibilityElement(children: .combine).accessibilityHint("Shows \(filter.rawValue.lowercased()) items").accessibilityIdentifier("tile-\(filter.rawValue)-\(title)")
     }
@@ -52,7 +67,7 @@ struct InventoryView: View {
     private var items: [SellItem] { store.items.filter { item in switch filter { case .active: item.status == .active; case .sold: item.status == .sold; case .archived: item.status == .archived; case .drafts: item.status == .draft || item.status == .ready } } }
     var body: some View { ScrollView { VStack(spacing: 16) {
         Picker("Status", selection: $filter) { ForEach(InventoryFilter.allCases, id: \.self) { Text($0.rawValue) } }.pickerStyle(.segmented)
-        if items.isEmpty { ContentUnavailableView("No \(filter.rawValue.lowercased()) yet", systemImage: "tag", description: Text("Your items will appear here as you sell.")) }
+        if items.isEmpty { ContentUnavailableView("No \(filter.rawValue.lowercased()) yet", systemImage: "tag", description: Text("Your items will appear here as you sell.").foregroundStyle(PilotTheme.muted)) }
         ForEach(items) { item in Button { onSelect(item) } label: { ItemCard(item: item) }.buttonStyle(.plain) }
     }.padding(20) }.background(PilotTheme.background).navigationTitle("My Stuff") }
 }

@@ -19,7 +19,7 @@ struct ListingReviewView: View {
     private var index: Int? { workflow.item.listings.firstIndex { $0.marketplace == (market ?? defaultMarket) } }
     var body: some View { VStack(alignment: .leading, spacing: 18) {
         Text("Your Listing Is Ready").font(.largeTitle.bold())
-        Text("\(workflow.item.pricingStrategy.rawValue) · Review the facts, photos, and price before posting.").foregroundStyle(.secondary)
+        Text("\(workflow.item.pricingStrategy.rawValue) · Review the facts, photos, and price before posting.").foregroundStyle(PilotTheme.muted)
         if !workflow.item.listings.isEmpty {
             Picker("Marketplace listing", selection: Binding(get: { market ?? defaultMarket ?? .ebay }, set: { market = $0 })) { ForEach(workflow.item.listings) { draft in Text(draft.marketplace.rawValue).tag(draft.marketplace) } }.pickerStyle(.menu)
         }
@@ -27,7 +27,7 @@ struct ListingReviewView: View {
             editor(index)
             PilotCard {
                 Text("Publish / Export").font(.headline)
-                Text(workflow.services.ebaySetup == .notConfigured ? "Export prepares copy and original photos. You post the listing yourself; mock publishing never posts to a marketplace." : "Export prepares copy and original photos if you would rather post it yourself. To list on eBay directly, use Publish to eBay below.").font(.caption).foregroundStyle(.secondary)
+                Text(workflow.services.ebaySetup == .notConfigured ? "Export prepares copy and original photos. You post the listing yourself; mock publishing never posts to a marketplace." : "Export prepares copy and original photos if you would rather post it yourself. To list on eBay directly, use Publish to eBay below.").font(.caption).foregroundStyle(PilotTheme.muted)
                 HStack { Button("Copy title") { UIPasteboard.general.string = workflow.item.listings[index].title; copied = true }; Button("Copy description") { UIPasteboard.general.string = workflow.item.listings[index].description; copied = true } }.buttonStyle(.bordered)
                 Button("Copy full listing") { UIPasteboard.general.string = workflow.item.listings[index].fullText; copied = true }.buttonStyle(.bordered)
                 if copied { Text("Copied to clipboard").font(.caption).foregroundStyle(PilotTheme.accent) }
@@ -48,7 +48,7 @@ struct ListingReviewView: View {
         if workflow.services.ebaySetup != .notConfigured, !workflow.item.listings.isEmpty, !workflow.item.listings.contains(where: { $0.marketplace == .ebay }) {
             PilotCard {
                 Text("No eBay listing yet").font(.headline)
-                Text("This item only has listings for other places. Go back to Price & places, tick eBay, then tap Generate my listings.").font(.caption).foregroundStyle(.secondary)
+                Text("This item only has listings for other places. Go back to Price & places, tick eBay, then tap Generate my listings.").font(.caption).foregroundStyle(PilotTheme.muted)
             }
         }
     }.sheet(item: $share) { payload in ShareSheet(items: payload.items) } }

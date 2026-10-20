@@ -6,30 +6,31 @@ struct CaptureView: View {
     @State private var selections: [PhotosPickerItem] = []
     @State private var camera = false
     @State private var importing = false
+    @Environment(\.dynamicTypeSize) private var textSize
     var body: some View { VStack(alignment: .leading, spacing: 18) {
         Text("What are you selling?").font(.largeTitle.bold())
-        Text("Start with a few clear photos. Front, back, label, accessories, and any wear.").foregroundStyle(.secondary)
-        HStack {
+        Text("Start with a few clear photos. Front, back, label, accessories, and any wear.").foregroundStyle(PilotTheme.muted)
+        AdaptiveStack {
             PhotosPicker(selection: $selections, maxSelectionCount: max(1, 10 - workflow.item.photos.count), matching: .images) { Label(importing ? "Importing…" : "Photo library", systemImage: "photo.on.rectangle").padding(14) }.disabled(workflow.item.photos.count >= 10 || importing)
             Button { Task { if UIImagePickerController.isSourceTypeAvailable(.camera) { let allowed = await AVCaptureDevice.requestAccess(for: .video); if allowed { camera = true } else { workflow.error = "Enable camera access in Settings, or import from your library." } } else { workflow.error = "Camera unavailable on this device. Use the photo library or demo photo." } } } label: { Label("Camera", systemImage: "camera").padding(14) }.disabled(workflow.item.photos.count >= 10)
         }.buttonStyle(.bordered)
         Text("\(workflow.item.photos.count)/10 photos · \(workflow.item.photos.count >= 3 ? "I have enough photos to analyze this item." : "You can analyze with any photo count.")").font(.caption).foregroundStyle(PilotTheme.accent)
         ForEach(Array(workflow.item.photos.enumerated()), id: \.element.id) { index, photo in PilotCard {
             PhotoView(photo: photo, original: true)
-            HStack {
+            AdaptiveStack {
                 Button { workflow.item.coverPhotoID = photo.id } label: { Label(workflow.item.coverPhotoID == photo.id ? "Cover" : "Make cover", systemImage: workflow.item.coverPhotoID == photo.id ? "star.fill" : "star") }
-                Spacer()
+                if !textSize.isAccessibilitySize { Spacer() }
                 Button { move(index, by: -1) } label: { Image(systemName: "arrow.up") }.disabled(index == 0).accessibilityLabel("Move photo earlier")
                 Button { move(index, by: 1) } label: { Image(systemName: "arrow.down") }.disabled(index == workflow.item.photos.count - 1).accessibilityLabel("Move photo later")
                 Button(role: .destructive) { workflow.item.photos.removeAll { $0.id == photo.id }; if workflow.item.coverPhotoID == photo.id { workflow.item.coverPhotoID = workflow.item.photos.first?.id } } label: { Image(systemName: "trash") }.accessibilityLabel("Delete photo")
             }.buttonStyle(.bordered)
         } }
-        if workflow.item.photos.isEmpty { Button("Try with a labeled demo photo") { add(PhotoImport.demoPhoto()) }.accessibilityIdentifier("demoPhoto"); Text(workflow.services.identification.disclosure ?? "Demo mode: identification always returns a sample tool; edit it to match your item.").font(.caption).foregroundStyle(.secondary) }
+        if workflow.item.photos.isEmpty { Button("Try with a labeled demo photo") { add(PhotoImport.demoPhoto()) }.accessibilityIdentifier("demoPhoto"); Text(workflow.services.identification.disclosure ?? "Demo mode: identification always returns a sample tool; edit it to match your item.").font(.caption).foregroundStyle(PilotTheme.muted) }
         if !workflow.item.photos.isEmpty {
             if workflow.identificationFailed { Text("We couldn't identify this item automatically. You can try again, or enter the details yourself.").font(.subheadline).foregroundStyle(.red) }
             Button { workflow.skipIdentification() } label: { Label("Skip — I'll enter the details myself", systemImage: "square.and.pencil").frame(maxWidth: .infinity).padding(12) }.buttonStyle(.bordered).accessibilityIdentifier("skipIdentification")
         }
-        if !workflow.item.photos.isEmpty, let disclosure = workflow.services.identification.disclosure { Text(disclosure).font(.caption).foregroundStyle(.secondary) }
+        if !workflow.item.photos.isEmpty, let disclosure = workflow.services.identification.disclosure { Text(disclosure).font(.caption).foregroundStyle(PilotTheme.muted) }
     }.sheet(isPresented: $camera) { CameraPicker(onImage: add) }
         .onChange(of: selections) { _, selected in Task { importing = true; defer { importing = false; selections = [] }; for selection in selected { do { if let data = try await selection.loadTransferable(type: Data.self) { add(data) } else { workflow.error = "One photo could not be imported." } } catch { workflow.error = error.localizedDescription } } } }
     }
@@ -56,15 +57,15 @@ struct IdentificationView: View {
         Text("Is this right?").font(.largeTitle.bold())
         if let photo = workflow.item.orderedPhotos.first { PhotoView(photo: photo) }
         PilotCard {
-            if workflow.item.identification == nil { Text("Enter the details").font(.headline); Text("No automatic identification. Fill in what you know; the title is required.").font(.caption).foregroundStyle(.secondary) }
+            if workflow.item.identification == nil { Text("Enter the details").font(.headline); Text("No automatic identification. Fill in what you know; the title is required.").font(.caption).foregroundStyle(PilotTheme.muted) }
             else {
                 Text("\(workflow.item.identification?.isSimulated == false ? "AI confidence" : "Simulated AI confidence"): \(Int(workflow.item.confidenceScore * 100))%").font(.headline)
-                Text(workflow.item.confidenceScore < 0.7 ? "Low confidence. Review possible matches and verify every detail." : (workflow.item.identification?.isSimulated == false ? "AI suggestions can be wrong. Verify every detail, especially the model number." : "This is a demo match, not real image recognition. Verify every detail.")).font(.caption).foregroundStyle(.secondary)
+                Text(workflow.item.confidenceScore < 0.7 ? "Low confidence. Review possible matches and verify every detail." : (workflow.item.identification?.isSimulated == false ? "AI suggestions can be wrong. Verify every detail, especially the model number." : "This is a demo match, not real image recognition. Verify every detail.")).font(.caption).foregroundStyle(PilotTheme.muted)
             }
             if let identification = workflow.item.identification { Text("Possible model: \(identification.possibleModelNumber ?? "Unknown")").font(.caption); ForEach(identification.recognizedAttributes.keys.sorted(), id: \.self) { key in Text("\(key): \(identification.recognizedAttributes[key] ?? "")").font(.caption) } }
         }
         PilotCard {
-            TextField("Product name", text: $workflow.item.title).accessibilityIdentifier("productTitle")
+            TextField("Product name", text: $workflow.item.title, axis: .vertical).lineLimit(1...3).accessibilityIdentifier("productTitle")
             Divider(); TextField("Brand", text: $workflow.item.brand); Divider(); TextField("Model", text: $workflow.item.model)
             Picker("Category", selection: $workflow.item.category) { ForEach(categories, id: \.self) { Text($0).tag($0) } }
             TextField("Subcategory", text: $workflow.item.subcategory); TextField("Color", text: $workflow.item.color)
@@ -75,7 +76,7 @@ struct IdentificationView: View {
                 TextField("ISBN (books)", text: $isbnText).keyboardType(.numbersAndPunctuation).autocorrectionDisabled().accessibilityIdentifier("isbnField")
                 Button("Look up") { Task { await workflow.lookUpISBN(isbnText) } }.buttonStyle(.bordered).disabled(isbnText.trimmingCharacters(in: .whitespaces).isEmpty && workflow.item.isbn == nil)
             }
-            Text(workflow.isbnStatus ?? (workflow.item.isbn.map { "ISBN \($0)" } ?? "Books: photograph the barcode on the back cover and SellPilot reads it, or type the ISBN.")).font(.caption).foregroundStyle(.secondary)
+            Text(workflow.isbnStatus ?? (workflow.item.isbn.map { "ISBN \($0)" } ?? "Books: photograph the barcode on the back cover and SellPilot reads it, or type the ISBN.")).font(.caption).foregroundStyle(PilotTheme.muted)
         }.onAppear { isbnText = workflow.item.isbn ?? "" }.onChange(of: workflow.item.isbn) { _, isbn in isbnText = isbn ?? isbnText }
         Text("Other possible matches").font(.headline)
         ForEach(workflow.item.identification?.alternateMatches ?? []) { match in Button { workflow.apply(match) } label: { HStack { Text(match.title); Spacer(); Image(systemName: "arrow.up.left") }.padding(14) }.buttonStyle(.bordered) }
@@ -88,8 +89,8 @@ struct NotesView: View {
     @State private var initialNote = ""
     var body: some View { VStack(alignment: .leading, spacing: 18) {
         Text("Anything the photos don’t show?").font(.title2.bold())
-        Text("Does it work? Any missing accessories, defects, or useful history?").foregroundStyle(.secondary)
-        PilotCard { TextEditor(text: $workflow.item.sellerNotes).frame(minHeight: 140).accessibilityLabel("Seller note"); Text("Example: Works well. Battery not included. Small scratch on the handle.").font(.caption).foregroundStyle(.secondary) }
+        Text("Does it work? Any missing accessories, defects, or useful history?").foregroundStyle(PilotTheme.muted)
+        PilotCard { TextEditor(text: $workflow.item.sellerNotes).frame(minHeight: 140).accessibilityLabel("Seller note"); Text("Example: Works well. Battery not included. Small scratch on the handle.").font(.caption).foregroundStyle(PilotTheme.muted) }
         Button { if dictation.recording { dictation.stop() } else { initialNote = workflow.item.sellerNotes; starting = true; Task { await dictation.start(); starting = false } } } label: { Label(starting ? "Starting…" : dictation.recording ? "Stop dictation" : "Dictate a note", systemImage: dictation.recording ? "stop.circle.fill" : "mic.fill").padding(12) }.buttonStyle(.bordered).disabled(starting)
         TextField("Condition notes (optional)", text: $workflow.item.conditionNotes, axis: .vertical).textFieldStyle(.roundedBorder)
         if let error = dictation.error { Text(error).font(.caption).foregroundStyle(.red) }
