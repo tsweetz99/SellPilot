@@ -12,6 +12,7 @@ struct SettingsView: View {
     @State private var backupMessage: String?
     @State private var key = ""
     @State private var hasKey = APIKeyStore.load() != nil
+    @State private var aiAllowed = AIConsent.given
     @State private var message: String?
     @State private var ebayApp = ""
     @State private var ebayCert = ""
@@ -62,14 +63,15 @@ struct SettingsView: View {
                 if let store { backupSection(store) }
                 Section { Link("Privacy policy", destination: PrivacyPolicy.url) } footer: { Text("What SellPilot keeps on your phone and what it sends to other services.") }
                 Section {
-                    SecureField("Anthropic API key", text: $key).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    Toggle("Allow AI identification", isOn: $aiAllowed).onChange(of: aiAllowed) { _, allowed in AIConsent.given = allowed }
+                    SecureField("Anthropic API key (optional)", text: $key).textInputAutocapitalization(.never).autocorrectionDisabled()
                     Button("Save key") {
                         do { try APIKeyStore.save(key); key = ""; hasKey = true; message = "Saved. New items will use AI identification." }
                         catch { message = error.localizedDescription }
                     }.disabled(key.trimmingCharacters(in: .whitespaces).isEmpty)
-                    if hasKey { Button("Remove key", role: .destructive) { APIKeyStore.delete(); hasKey = APIKeyStore.load() != nil; message = "Removed. Demo mode is on." } }
+                    if hasKey { Button("Remove key", role: .destructive) { APIKeyStore.delete(); hasKey = APIKeyStore.load() != nil; message = "Removed. SellPilot's built-in AI service is used again." } }
                 } header: { Text("AI identification") } footer: {
-                    Text(hasKey ? "AI identification is on. Photos you analyze are sent to Anthropic's Claude service." : "No key set: demo mode always returns a sample tool. Prototype setting. The key stays in this device's Keychain; a public release should use your own server instead.")
+                    Text(hasKey ? "AI identification uses your own key. Photos you analyze are sent to Anthropic's Claude service. The key stays in this device's Keychain." : "AI identification is built in. Photos you analyze are sent to SellPilot's AI service, which uses Anthropic's Claude, and are not stored. Turn this off to enter details yourself.")
                 }
                 Section {
                     SecureField("eBay App ID", text: $ebayApp).textInputAutocapitalization(.never).autocorrectionDisabled()

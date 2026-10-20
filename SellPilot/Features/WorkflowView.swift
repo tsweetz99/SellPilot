@@ -3,6 +3,7 @@ struct WorkflowView: View {
     @State var workflow: SellingWorkflow
     @Environment(\.dismiss) private var dismiss
     @State private var confirmActive = false
+    @State private var askConsent = false
     @State private var showSettings = false
     @State private var showSold = false
     @State private var soldPrice = ""
@@ -30,7 +31,11 @@ struct WorkflowView: View {
         }.padding(22) }.id(workflow.item.workflowStep).scrollDismissesKeyboard(.interactively).background(PilotTheme.background)
             .safeAreaInset(edge: .bottom) {
                 if workflow.item.workflowStep < SellItem.lastStep {
-                    PrimaryButton(title: workflow.busy ? "Working…" : nextTitle) { Task { await workflow.advance() } }
+                    PrimaryButton(title: workflow.busy ? "Working…" : nextTitle) {
+                        // Photos go to an AI service, so ask once before the first analysis.
+                        if workflow.item.workflowStep == 0 && workflow.services.usesLiveIdentification && !AIConsent.given { askConsent = true }
+                        else { Task { await workflow.advance() } }
+                    }
                         .disabled(workflow.busy || (workflow.item.workflowStep == 0 && workflow.item.photos.isEmpty))
                         .padding(.horizontal, 22).padding(.vertical, 12).background(.regularMaterial)
                 }
@@ -41,6 +46,11 @@ struct WorkflowView: View {
                 ToolbarItem(placement: .topBarTrailing) { Button("Done") { if workflow.save() { dismiss() } }.disabled(workflow.busy) }
             }
             .interactiveDismissDisabled(workflow.busy)
+            .confirmationDialog("Send your photos to an AI service?", isPresented: $askConsent, titleVisibility: .visible) {
+                Button("Allow and analyze") { AIConsent.given = true; Task { await workflow.advance() } }
+                Button("I'll enter the details myself") { workflow.skipIdentification() }
+                Button("Cancel", role: .cancel) {}
+            } message: { Text((workflow.services.identification.disclosure ?? "") + " If you publish to eBay, your item description may also be sent to fill in item details. You can change this in Settings.") }
             .onChange(of: workflow.item) { _, _ in workflow.save() }
             .alert("Could not complete action", isPresented: Binding(get: { workflow.error != nil }, set: { if !$0 { workflow.error = nil; workflow.reconnectNeeded = false } })) {
                 if workflow.reconnectNeeded { Button("Open Settings") { workflow.error = nil; workflow.reconnectNeeded = false; showSettings = true } }

@@ -52,10 +52,12 @@ extension AppServices {
     /// Real identification when an API key is configured; otherwise the demo fixture. UI tests always get the fixture.
     @MainActor static func make() -> AppServices {
         var services = AppServices()
-        if !ProcessInfo.processInfo.arguments.contains("--ui-testing"), let key = APIKeyStore.load() {
-            services.identification = ClaudeIdentificationService(configuration: .init(apiKey: key))
-        }
         let testing = ProcessInfo.processInfo.arguments.contains("--ui-testing")
+        // A key the seller entered themselves wins; otherwise the studio's hosted AI service. UI tests always get the demo fixture.
+        if !testing {
+            if let key = APIKeyStore.load() { services.identification = ClaudeIdentificationService(configuration: .init(apiKey: key)) }
+            else { services.identification = HostedIdentificationService() }
+        }
         if !testing { services.books = PublicBookCatalog() }
         // With a token server configured, eBay application tokens come from it (the Cert ID can then stay off the device).
         // A Cert ID still saved on the device is used as a fallback, so the switch never leaves a gap.
@@ -90,6 +92,7 @@ extension AppServices {
                 }
                 services.ebay = EbaySellService(configuration: configuration, appTokens: tokens)
                 if let key = APIKeyStore.load() { services.specifics = ClaudeItemFactsService(configuration: .init(apiKey: key)) }
+                else { services.specifics = HostedItemFactsService() }
             } else if EbayConnections.make(environment) != nil {
                 services.ebayNeedsSignIn = true   // everything is configured except the sign-in itself
             }

@@ -29,3 +29,20 @@ test("keeps one record per key, overwritten each hour, so the store does not gro
   for (let hour = 0; hour < 5; hour++) { await limiter.check("a"); time += HOUR; }
   assert.deepEqual([...records.keys()].sort(), ["global", "key:a"]);
 });
+
+import { createBudget } from "../lib/rateLimit.mjs";
+
+test("budget windows roll over: hourly for an address, daily for an install and the service", async () => {
+  let time = 0;
+  const budget = createBudget(memoryStore(), { installPerDay: 10, addressPerHour: 3, globalPerDay: 100, now: () => time });
+  const spend = (units = 1) => budget.spend({ installKey: "k", addressHash: "a", units });
+  assert.equal((await spend(3)).allowed, true);
+  const blocked = await spend(1);
+  assert.equal(blocked.allowed, false); assert.equal(blocked.scope, "address"); assert.equal(blocked.retryAfterSeconds, 3600);
+  time = 3_600_001;                                   // next hour: the address window rolls over, the install's day has not
+  assert.equal((await spend(3)).allowed, true);
+  time = 7_200_001; assert.equal((await spend(3)).allowed, true);
+  time = 10_800_001; const dayLimited = await spend(3);          // 9 used of 10 today
+  assert.equal(dayLimited.allowed, false); assert.equal(dayLimited.scope, "install");
+  time = 86_400_001; assert.equal((await spend(3)).allowed, true, "a new day starts fresh");
+});

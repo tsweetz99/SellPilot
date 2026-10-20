@@ -16,7 +16,8 @@ enum ClaudeAPI {
 
     private static let retryableStatuses: Set<Int> = [429, 500, 502, 503, 504, 529]
 
-    static func send(_ request: URLRequest, session: URLSession, retryDelay: Duration) async throws -> Data {
+    /// `retryable` and `errorMessage` let the hosted service retry only what is safe to repeat and show its own wording.
+    static func send(_ request: URLRequest, session: URLSession, retryDelay: Duration, retryable: Set<Int> = retryableStatuses, errorMessage: ((Int, Data) -> String?)? = nil) async throws -> Data {
         for attempt in 0...1 {
             let data: Data, response: URLResponse
             do { (data, response) = try await session.data(for: request) }
@@ -26,8 +27,8 @@ enum ClaudeAPI {
             }
             guard let http = response as? HTTPURLResponse else { throw ServiceError.invalid("Unexpected response from the identification service.") }
             if (200..<300).contains(http.statusCode) { return data }
-            if attempt == 0, retryableStatuses.contains(http.statusCode) { try await Task.sleep(for: retryDelay); continue }
-            throw ServiceError.invalid(message(status: http.statusCode, body: data))
+            if attempt == 0, retryable.contains(http.statusCode) { try await Task.sleep(for: retryDelay); continue }
+            throw ServiceError.invalid(errorMessage?(http.statusCode, data) ?? message(status: http.statusCode, body: data))
         }
         throw ServiceError.invalid("The identification service is unavailable. Try again shortly.")
     }
