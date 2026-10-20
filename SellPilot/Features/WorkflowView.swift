@@ -11,8 +11,8 @@ struct WorkflowView: View {
     private let titles = ["Photograph", "Confirm", "Price & places", "Ready"]
     var body: some View { NavigationStack {
         ScrollView { VStack(alignment: .leading, spacing: 22) {
-            HStack { Text("\(workflow.item.workflowStep + 1) OF \(SellItem.lastStep + 1)").font(.caption.bold()).tracking(2); Spacer(); Text(workflow.services.usesLiveIdentification || workflow.services.usesLivePricing ? "Saved on this device" : "Saved on this device · Demo data").font(.caption).foregroundStyle(.secondary) }
-            ProgressView(value: Double(workflow.item.workflowStep + 1), total: Double(SellItem.lastStep + 1))
+            AdaptiveStack { Text("\(workflow.item.workflowStep + 1) OF \(SellItem.lastStep + 1)").font(.caption.bold()).tracking(2); Spacer(minLength: 8); Text(workflow.services.usesLiveIdentification || workflow.services.usesLivePricing ? "Saved on this device" : "Saved on this device · Demo data").font(.caption).foregroundStyle(PilotTheme.muted) }
+            ProgressView(value: Double(workflow.item.workflowStep + 1), total: Double(SellItem.lastStep + 1)).accessibilityHidden(true)
             if workflow.item.status == .sold { PilotCard { Label("Sold for \((workflow.item.soldPrice ?? 0).money)", systemImage: "checkmark.seal.fill").font(.title2.bold()); Text(workflow.item.soldDate?.formatted() ?? "") } }
             else if workflow.item.status == .active { PilotCard { Label(onEbay ? "Live on eBay" : "Tracking as Active", systemImage: "tag.fill"); Text(onEbay ? "Published to eBay from SellPilot." : "You confirmed this item was published externally.").font(.caption); PrimaryButton(title: "Mark Sold", icon: "checkmark") { soldPrice = String(workflow.item.askingPrice); showSold = true } } }
             Group { switch workflow.item.workflowStep {
@@ -26,7 +26,7 @@ struct WorkflowView: View {
                 Button { Task { await workflow.refreshMarketPrices() } } label: { Label("Refresh market prices", systemImage: "arrow.clockwise").frame(maxWidth: .infinity).padding(12) }.buttonStyle(.bordered).disabled(workflow.busy || workflow.item.listings.contains { $0.ebayListingID != nil })
                 Button("Save as Draft") { workflow.item.status = .draft; if workflow.save() { dismiss() } }.frame(maxWidth: .infinity).padding()
             }
-            if workflow.item.workflowStep == SellItem.lastStep && workflow.item.status != .archived { Button("Archive item") { workflow.item.status = .archived; if workflow.save() { dismiss() } }.foregroundStyle(.secondary) }
+            if workflow.item.workflowStep == SellItem.lastStep && workflow.item.status != .archived { Button("Archive item") { workflow.item.status = .archived; if workflow.save() { dismiss() } }.foregroundStyle(PilotTheme.muted) }
         }.padding(22) }.id(workflow.item.workflowStep).scrollDismissesKeyboard(.interactively).background(PilotTheme.background)
             .safeAreaInset(edge: .bottom) {
                 if workflow.item.workflowStep < SellItem.lastStep {

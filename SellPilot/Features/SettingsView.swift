@@ -39,7 +39,7 @@ struct SettingsView: View {
             }.disabled(backingUp || restoring || store.items.isEmpty)
             if let backupURL { ShareLink("Save backup file", item: backupURL) }
             Button(restoring ? "Restoring…" : "Restore from a backup file") { showRestorePicker = true }.disabled(backingUp || restoring)
-            if let backupMessage { Text(backupMessage).font(.caption).foregroundStyle(.secondary) }
+            if let backupMessage { Text(backupMessage).font(.caption).foregroundStyle(PilotTheme.muted) }
         } header: { Text("Backup") } footer: {
             Text("\(BackupService.lastBackup.map { "Last backup: \($0.formatted(date: .abbreviated, time: .shortened))." } ?? "You haven't backed up yet.") A backup holds your items, drafts and photos, not your API keys or eBay sign-in. Deleting the app deletes its data, so back up first. Restoring never replaces an item with an older copy.")
         }

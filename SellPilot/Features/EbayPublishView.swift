@@ -19,7 +19,7 @@ struct EbayPublishCard: View {
             Link("View on eBay", destination: url)
             Button("End listing", role: .destructive) { Task { await workflow.endEbayListing(index) } }.buttonStyle(.bordered).disabled(workflow.busy)
         } else if draft.ebayCategoryID == nil {
-            Text("eBay needs a category and a few item details. SellPilot can suggest them from your item.").font(.caption).foregroundStyle(.secondary)
+            Text("eBay needs a category and a few item details. SellPilot can suggest them from your item.").font(.caption).foregroundStyle(PilotTheme.muted)
             Button { Task { await workflow.prepareEbayListing(index) } } label: { Label(workflow.busy ? "Working…" : "Find category and details", systemImage: "wand.and.stars") }
                 .buttonStyle(.bordered).disabled(workflow.busy).accessibilityIdentifier("ebayPrepare")
         } else {
@@ -72,7 +72,7 @@ struct EbayPublishCard: View {
         Menu {
             ForEach(options) { option in Button(option.name) { selection.wrappedValue = option.id } }
         } label: {
-            HStack { Text(title).foregroundStyle(.secondary); Spacer(); Text(options.first { $0.id == selection.wrappedValue }?.name ?? (options.isEmpty ? (workflow.ebayPoliciesProblem == nil ? "Loading…" : "None") : "Choose")); Image(systemName: "chevron.up.chevron.down").font(.caption) }
+            HStack { Text(title).foregroundStyle(PilotTheme.muted); Spacer(); Text(options.first { $0.id == selection.wrappedValue }?.name ?? (options.isEmpty ? (workflow.ebayPoliciesProblem == nil ? "Loading…" : "None") : "Choose")); Image(systemName: "chevron.up.chevron.down").font(.caption) }
                 .padding(10).background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
         }.disabled(options.isEmpty || workflow.busy)
     }
@@ -98,7 +98,7 @@ struct EbayConnectCard: View {
 
     var body: some View { PilotCard {
         Text(workflow.services.ebayIsLive ? "Publish to eBay" : "Publish to eBay Sandbox (test)").font(.headline)
-        Text(workflow.services.ebayIsLive ? "Connect your eBay account to publish real listings. In Settings, tap \"Connect eBay account\" under Real eBay." : "Connect your eBay account to publish. In Settings, tap \"Connect eBay Sandbox account\" and sign in as your sandbox seller.").font(.caption).foregroundStyle(.secondary)
+        Text(workflow.services.ebayIsLive ? "Connect your eBay account to publish real listings. In Settings, tap \"Connect eBay account\" under Real eBay." : "Connect your eBay account to publish. In Settings, tap \"Connect eBay Sandbox account\" and sign in as your sandbox seller.").font(.caption).foregroundStyle(PilotTheme.muted)
         Button { showSettings = true } label: { Label("Open Settings", systemImage: "gearshape").frame(maxWidth: .infinity).padding(12) }
             .buttonStyle(.borderedProminent).accessibilityIdentifier("ebayOpenSettings")
     }
@@ -131,7 +131,7 @@ struct EbaySetupCard: View {
 
     var body: some View { PilotCard {
         Text(workflow.services.ebayIsLive ? "Publish to eBay" : "Publish to eBay Sandbox (test)").font(.headline)
-        Text("Not set up on this device yet. Still needed in Settings: \(missing.joined(separator: ", ")). Then connect your eBay account.").font(.caption).foregroundStyle(.secondary)
+        Text("Not set up on this device yet. Still needed in Settings: \(missing.joined(separator: ", ")). Then connect your eBay account.").font(.caption).foregroundStyle(PilotTheme.muted)
         Button { showSettings = true } label: { Label("Open Settings", systemImage: "gearshape").frame(maxWidth: .infinity).padding(12) }
             .buttonStyle(.borderedProminent).accessibilityIdentifier("ebaySetupSettings")
     }
