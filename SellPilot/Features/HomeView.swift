@@ -42,7 +42,7 @@ struct HomeView: View {
         let brand = HStack { Image(systemName: "paperplane.fill").foregroundStyle(PilotTheme.accent).accessibilityHidden(true); Text("SELLPILOT").font(.headline).tracking(3).lineLimit(1).minimumScaleFactor(0.6) }
         let settings = Button { showSettings = true } label: {
             HStack(spacing: 8) {
-                Text(ProcessInfo.processInfo.arguments.contains("--ui-testing") ? "MVP • MOCK AI" : "MVP • AI ON").font(.caption.bold()).foregroundStyle(PilotTheme.muted).lineLimit(1).minimumScaleFactor(0.7)
+                if AppMode.current == .developer { Text(ProcessInfo.processInfo.arguments.contains("--ui-testing") ? "MVP • MOCK AI" : "MVP • AI ON").font(.caption.bold()).foregroundStyle(PilotTheme.muted).lineLimit(1).minimumScaleFactor(0.7) }
                 Image(systemName: "gearshape").foregroundStyle(PilotTheme.muted)
             }.frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
         }.accessibilityLabel("Settings")

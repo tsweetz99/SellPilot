@@ -13,6 +13,8 @@ struct SettingsView: View {
     @State private var key = ""
     @State private var hasKey = APIKeyStore.load() != nil
     @State private var aiAllowed = AIConsent.given
+    @State private var loadingEbay = false
+    private let developer = AppMode.current == .developer
     @State private var message: String?
     @State private var ebayApp = ""
     @State private var ebayCert = ""
@@ -32,18 +34,26 @@ struct SettingsView: View {
     private func backupSection(_ store: ItemStore) -> some View {
         Section {
             Button(backingUp ? "Preparing…" : "Back up all items") {
+                if store.items.isEmpty { backupMessage = "You don't have any items to back up yet."; return }
                 Task {
                     backingUp = true; defer { backingUp = false }
                     do { backupURL = try await BackupService.export(store: store); backupMessage = "Backup ready. Tap Save backup file to put it in Files or iCloud Drive." }
                     catch { backupMessage = "The backup couldn't be created: \(error.localizedDescription)" }
                 }
-            }.disabled(backingUp || restoring || store.items.isEmpty)
+            }.disabled(backingUp || restoring)
             if let backupURL { ShareLink("Save backup file", item: backupURL) }
             Button(restoring ? "Restoring…" : "Restore from a backup file") { showRestorePicker = true }.disabled(backingUp || restoring)
             if let backupMessage { Text(backupMessage).font(.caption).foregroundStyle(PilotTheme.muted) }
         } header: { Text("Backup") } footer: {
             Text("\(BackupService.lastBackup.map { "Last backup: \($0.formatted(date: .abbreviated, time: .shortened))." } ?? "You haven't backed up yet.") A backup holds your items, drafts and photos, not your API keys or eBay sign-in. Deleting the app deletes its data, so back up first. Restoring never replaces an item with an older copy.")
         }
+    }
+
+    /// Learns eBay's current sign-in setup from the server (so nobody types it in), then builds the connection.
+    private func loadEbay() async {
+        loadingEbay = true; defer { loadingEbay = false }
+        if !ProcessInfo.processInfo.arguments.contains("--ui-testing") { await EbayDeployment.refresh() }
+        liveConnection = EbayConnections.make(.production)
     }
 
     private func handleRestore(_ result: Result<URL, Error>) {
@@ -64,15 +74,16 @@ struct SettingsView: View {
                 Section { Link("Privacy policy", destination: PrivacyPolicy.url) } footer: { Text("What SellPilot keeps on your phone and what it sends to other services.") }
                 Section {
                     Toggle("Allow AI identification", isOn: $aiAllowed).onChange(of: aiAllowed) { _, allowed in AIConsent.given = allowed }
-                    SecureField("Anthropic API key (optional)", text: $key).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    Button("Save key") {
+                    if developer { SecureField("Anthropic API key (optional)", text: $key).textInputAutocapitalization(.never).autocorrectionDisabled() }
+                    if developer { Button("Save key") {
                         do { try APIKeyStore.save(key); key = ""; hasKey = true; message = "Saved. New items will use AI identification." }
                         catch { message = error.localizedDescription }
-                    }.disabled(key.trimmingCharacters(in: .whitespaces).isEmpty)
-                    if hasKey { Button("Remove key", role: .destructive) { APIKeyStore.delete(); hasKey = APIKeyStore.load() != nil; message = "Removed. SellPilot's built-in AI service is used again." } }
+                    }.disabled(key.trimmingCharacters(in: .whitespaces).isEmpty) }
+                    if developer, hasKey { Button("Remove key", role: .destructive) { APIKeyStore.delete(); hasKey = APIKeyStore.load() != nil; message = "Removed. SellPilot's built-in AI service is used again." } }
                 } header: { Text("AI identification") } footer: {
                     Text(hasKey ? "AI identification uses your own key. Photos you analyze are sent to Anthropic's Claude service. The key stays in this device's Keychain." : "AI identification is built in. Photos you analyze are sent to SellPilot's AI service, which uses Anthropic's Claude, and are not stored. Turn this off to enter details yourself.")
                 }
+                if developer {
                 Section {
                     SecureField("eBay App ID", text: $ebayApp).textInputAutocapitalization(.never).autocorrectionDisabled()
                     SecureField("eBay Cert ID", text: $ebayCert).textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -122,6 +133,8 @@ struct SettingsView: View {
                 } header: { Text("eBay Sandbox sign-in") } footer: {
                     Text("Sign in with a sandbox test seller instead of pasting a token. SellPilot never sees your eBay password. With a token server, eBay sign-in and app tokens go through it and the Cert ID is not needed on this device. Without one, the Cert ID is used directly from this device, which is fine for testing only.")
                 }
+                }
+                if developer {
                 Section {
                     SecureField("Production redirect name (RuName)", text: $liveRuName).textInputAutocapitalization(.never).autocorrectionDisabled()
                     TextField("Ship-from ZIP code", text: $zip).keyboardType(.numberPad)
@@ -139,8 +152,24 @@ struct SettingsView: View {
                 } header: { Text("Real eBay (live listings)") } footer: {
                     Text("Off by default. When on, listings you publish go to REAL eBay, where real buyers can purchase them and eBay may charge fees. It needs your Production App ID (in eBay market data above), a Production sign-in, and the ZIP code you ship from. Turn it off to go back to the sandbox.")
                 }
+                } else {
+                Section {
+                    if let liveConnection { EbayConnectRow(connection: liveConnection) }
+                    else {
+                        Text(loadingEbay ? "Loading eBay setup…" : "eBay sign-in isn't available right now. Check your internet connection and try again.").font(.footnote).foregroundStyle(PilotTheme.muted)
+                        if !loadingEbay { Button("Try again") { Task { await loadEbay() } } }
+                    }
+                    TextField("Ship-from ZIP code", text: $zip).keyboardType(.numberPad)
+                        .onChange(of: zip) { _, new in if new.isEmpty || LiveSettings.isValidZip(new) { LiveSettings.shipFromZip = new } }
+                    Toggle("Publish to eBay", isOn: Binding(get: { liveOn }, set: { liveOn = $0; LiveSettings.enabled = $0 }))
+                        .disabled(!liveOn && !(LiveSettings.isValidZip(zip) && liveConnection?.status == .connected))
+                } header: { Text("eBay") } footer: {
+                    Text("Off by default. To publish from SellPilot, connect your eBay seller account, enter the 5-digit ZIP code you ship from, then turn this on. Listings you publish are real: buyers can purchase them and eBay may charge fees. SellPilot never sees your eBay password.")
+                }
+                }
                 if let message { Section { Text(message).font(.footnote) } }
             }
+            .task { await loadEbay() }
             .fileImporter(isPresented: $showRestorePicker, allowedContentTypes: [.data], onCompletion: handleRestore)
             .navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }

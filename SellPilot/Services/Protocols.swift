@@ -25,7 +25,8 @@ enum ServiceError: LocalizedError {
     var errorDescription: String? { switch self { case .invalid(let message): message } }
 }
 /// Where eBay publishing stands, so the screen can say what is missing instead of hiding the whole section.
-enum EbayPublishingSetup: Equatable { case notConfigured, needsSignIn, ready }
+/// `turnedOff` is the public app with eBay publishing switched off in Settings (the default).
+enum EbayPublishingSetup: Equatable { case notConfigured, needsSignIn, ready, turnedOff }
 
 struct AppServices {
     var identification: any ProductIdentificationService = MockProductIdentificationService()
@@ -44,13 +45,15 @@ struct AppServices {
     var ebayNeedsSignIn = false
     /// True when live publishing is switched on, so screens name the real eBay instead of the sandbox.
     var ebayIsLive = false
-    var ebaySetup: EbayPublishingSetup { ebay != nil ? .ready : (ebayNeedsSignIn ? .needsSignIn : .notConfigured) }
+    /// Public app only: publishing to eBay has not been switched on in Settings.
+    var ebayTurnedOff = false
+    var ebaySetup: EbayPublishingSetup { ebay != nil ? .ready : (ebayNeedsSignIn ? .needsSignIn : (ebayTurnedOff ? .turnedOff : .notConfigured)) }
 }
 extension AppServices {
     var usesLiveIdentification: Bool { identification.disclosure != nil }
     var usesLivePricing: Bool { !(research is MockMarketResearchService) }
     /// Real identification when an API key is configured; otherwise the demo fixture. UI tests always get the fixture.
-    @MainActor static func make() -> AppServices {
+    @MainActor static func make(mode: AppMode = .current) -> AppServices {
         var services = AppServices()
         let testing = ProcessInfo.processInfo.arguments.contains("--ui-testing")
         // A key the seller entered themselves wins; otherwise the studio's hosted AI service. UI tests always get the demo fixture.
@@ -59,12 +62,11 @@ extension AppServices {
             else { services.identification = HostedIdentificationService() }
         }
         if !testing { services.books = PublicBookCatalog() }
-        // With a token server configured, eBay application tokens come from it (the Cert ID can then stay off the device).
-        // A Cert ID still saved on the device is used as a fallback, so the switch never leaves a gap.
-        let server = APIKeyStore.load(.ebayAuthProxy).flatMap(URL.init(string:))
+        // eBay application tokens come from the token server (built in), so the Cert ID never has to be on the device.
+        // A Cert ID a developer saved on the device is used as a fallback, so the switch never leaves a gap.
+        let server = EbayDeployment.tokenServer
         func appTokens(_ environment: EbaySellEnvironment, direct: EbayCredentials?) -> (any EbayAppTokenSource)? {
             let local = direct.map { EbayTokenProvider(credentials: $0, baseURL: environment.apiBase, session: .shared) }
-            guard let server else { return local }
             return FallbackAppTokenSource(primary: ProxyAppTokenProvider(endpoint: server, environment: environment, installKey: APIKeyStore.installKey()), fallback: local)
         }
         if !testing, let tokens = appTokens(.production, direct: EbayCredentials.load()) {
@@ -72,12 +74,17 @@ extension AppServices {
             services.research = FilteredMarketResearchService(base: ebay, filter: TitleComparableFilter())
             services.pricing = AskingPricePricingService()
         }
-        let live = LiveSettings.enabled
+        // The public app only ever talks to real eBay; Settings has one switch for whether it may publish. Developers keep the
+        // sandbox: switch off means sandbox, switch on means real eBay.
+        let publishingOn = LiveSettings.enabled
+        let live = mode == .public || publishingOn
         services.ebayIsLive = live
         let environment: EbaySellEnvironment = live ? .production : .sandbox
         let sandboxCredentials = APIKeyStore.load(.ebaySandboxAppID).flatMap { app in APIKeyStore.load(.ebaySandboxCertID).map { EbayCredentials(appID: app, certID: $0) } }
         let credentials = live ? EbayCredentials.load() : sandboxCredentials
-        if !testing, let tokens = appTokens(environment, direct: credentials) {
+        if !testing, mode == .public, !publishingOn {
+            services.ebayTurnedOff = true
+        } else if !testing, let tokens = appTokens(environment, direct: credentials) {
             // A signed-in eBay connection wins. A pasted token is a testing shortcut for the sandbox only, never for real listings.
             let seller: (any EbayUserTokenSource)? = {
                 if let connection = EbayConnections.make(environment), connection.isConnected { return connection }
