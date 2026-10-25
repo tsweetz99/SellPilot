@@ -46,6 +46,21 @@ final class SellPilotUITests: XCTestCase {
         tap("Generate my listings", in: app)
         XCTAssertTrue(app.navigationBars["Ready"].waitForExistence(timeout: 10))
     }
+    /// The public app shows simple eBay settings; the developer fields (keys, sandbox, redirect name) are not there.
+    func testPublicSettingsHideTheDeveloperFields() {
+        let app = XCUIApplication(); app.launchArguments = ["--ui-testing", "--public-mode"]; app.launchEnvironment["SELLPILOT_TEST_STORE"] = UUID().uuidString; app.launch()
+        XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 5)); app.buttons["Settings"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
+        func reveal(_ element: XCUIElement) -> Bool { for _ in 0..<12 { if element.exists && element.isHittable { return true }; app.swipeUp() }; return element.exists }
+        XCTAssertTrue(reveal(app.textFields["Ship-from ZIP code"]), "the ZIP code field is there")
+        XCTAssertTrue(app.switches["Publish to eBay"].exists, "the publish switch is there")
+        XCTAssertTrue(app.staticTexts["eBay"].exists || app.staticTexts["EBAY"].exists, "an eBay section")
+        for developerOnly in ["eBay App ID", "eBay Cert ID", "Sandbox App ID", "Sandbox user token", "Anthropic API key (optional)", "Production redirect name (RuName)", "Token server URL (optional)"] {
+            XCTAssertFalse(app.secureTextFields[developerOnly].exists || app.textFields[developerOnly].exists, "\(developerOnly) should not show in the public app")
+        }
+        XCTAssertFalse(app.switches["Publish to real eBay"].exists)
+    }
+
     private func tap(_ name: String, in app: XCUIApplication) {
         let button = app.buttons[name]
         for _ in 0..<30 { if button.exists && button.isHittable { button.tap(); return }; app.swipeUp() }

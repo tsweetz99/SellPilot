@@ -258,11 +258,22 @@ protocol WebAuthenticator {
 @MainActor enum EbayConnections {
     static func make(_ environment: EbaySellEnvironment, authenticator: (any WebAuthenticator)? = nil) -> EbayConnection? {
         let sandbox = environment == .sandbox
-        guard let appID = APIKeyStore.load(sandbox ? .ebaySandboxAppID : .ebayAppID), let ruName = APIKeyStore.load(sandbox ? .ebaySandboxRuName : .ebayRuName) else { return nil }
+        let appID: String, ruName: String
         let exchange: any EbayTokenExchange
-        if let proxy = APIKeyStore.load(.ebayAuthProxy).flatMap(URL.init(string:)) { exchange = ProxyEbayTokenExchange(endpoint: proxy, environment: environment) }
-        else if let cert = APIKeyStore.load(sandbox ? .ebaySandboxCertID : .ebayCertID) { exchange = DirectEbayTokenExchange(environment: environment, credentials: .init(appID: appID, certID: cert), ruName: ruName) }
-        else { return nil }
+        if sandbox {
+            // Sandbox is for developers: everything comes from what they saved on this device.
+            guard let savedApp = APIKeyStore.load(.ebaySandboxAppID), let savedRuName = APIKeyStore.load(.ebaySandboxRuName) else { return nil }
+            appID = savedApp; ruName = savedRuName
+            if let proxy = APIKeyStore.load(.ebayAuthProxy).flatMap(URL.init(string:)) { exchange = ProxyEbayTokenExchange(endpoint: proxy, environment: environment) }
+            else if let cert = APIKeyStore.load(.ebaySandboxCertID) { exchange = DirectEbayTokenExchange(environment: environment, credentials: .init(appID: appID, certID: cert), ruName: ruName) }
+            else { return nil }
+        } else {
+            // Real eBay: the App ID and redirect name come from the server (or a developer's saved values) and codes are
+            // always exchanged by the token server, so the Cert ID never has to be on the phone.
+            guard let identity = EbayDeployment.productionIdentity() else { return nil }
+            appID = identity.appID; ruName = identity.ruName
+            exchange = ProxyEbayTokenExchange(endpoint: EbayDeployment.tokenServer, environment: environment)
+        }
         return EbayConnection(configuration: .init(environment: environment, appID: appID, ruName: ruName), exchange: exchange, authenticator: authenticator ?? SystemWebAuthenticator(),
                               storage: KeychainEbayTokenStorage(account: sandbox ? .ebaySandboxOAuthTokens : .ebayOAuthTokens))
     }

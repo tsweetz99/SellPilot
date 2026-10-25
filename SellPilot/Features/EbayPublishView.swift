@@ -98,11 +98,38 @@ struct EbayConnectCard: View {
 
     var body: some View { PilotCard {
         Text(workflow.services.ebayIsLive ? "Publish to eBay" : "Publish to eBay Sandbox (test)").font(.headline)
-        Text(workflow.services.ebayIsLive ? "Connect your eBay account to publish real listings. In Settings, tap \"Connect eBay account\" under Real eBay." : "Connect your eBay account to publish. In Settings, tap \"Connect eBay Sandbox account\" and sign in as your sandbox seller.").font(.caption).foregroundStyle(PilotTheme.muted)
+        Text(workflow.services.ebayIsLive ? "Connect your eBay account to publish listings. In Settings, tap \"Connect eBay account\" under eBay." : "Connect your eBay account to publish. In Settings, tap \"Connect eBay Sandbox account\" and sign in as your sandbox seller.").font(.caption).foregroundStyle(PilotTheme.muted).foregroundStyle(PilotTheme.muted)
         Button { showSettings = true } label: { Label("Open Settings", systemImage: "gearshape").frame(maxWidth: .infinity).padding(12) }
             .buttonStyle(.borderedProminent).accessibilityIdentifier("ebayOpenSettings")
     }
-    .sheet(isPresented: $showSettings, onDismiss: { workflow.reloadServices() }) { SettingsView() } }
+    .sheet(isPresented: $showSettings, onDismiss: { workflow.reloadServices() }) { SettingsView(store: workflow.store) } }
+}
+
+/// The public app with eBay publishing switched off (the default): say how to turn it on instead of hiding the section.
+struct EbayTurnedOffCard: View {
+    @Bindable var workflow: SellingWorkflow
+    @State private var showSettings = false
+
+    var body: some View { PilotCard {
+        Text("Publish to eBay").font(.headline)
+        Text("Publishing from SellPilot is turned off. Turn it on in Settings under eBay (you'll connect your seller account and enter the ZIP code you ship from). Listings you publish are real: buyers can purchase them and eBay may charge fees.").font(.caption).foregroundStyle(PilotTheme.muted)
+        Button { showSettings = true } label: { Label("Open Settings", systemImage: "gearshape").frame(maxWidth: .infinity).padding(12) }
+            .buttonStyle(.borderedProminent).accessibilityIdentifier("ebayTurnedOffSettings")
+    }
+    .sheet(isPresented: $showSettings, onDismiss: { workflow.reloadServices() }) { SettingsView(store: workflow.store) } }
+}
+
+/// The public app could not load eBay's setup (usually no connection the first time it runs).
+struct EbayUnavailableCard: View {
+    @Bindable var workflow: SellingWorkflow
+    @State private var retrying = false
+
+    var body: some View { PilotCard {
+        Text("Publish to eBay").font(.headline)
+        Text("eBay isn't available right now. Check your internet connection and try again.").font(.caption).foregroundStyle(PilotTheme.muted)
+        Button { Task { retrying = true; await EbayDeployment.refresh(); workflow.reloadServices(); retrying = false } } label: { Label(retrying ? "Trying…" : "Try again", systemImage: "arrow.clockwise").frame(maxWidth: .infinity).padding(12) }
+            .buttonStyle(.borderedProminent).disabled(retrying).accessibilityIdentifier("ebayTryAgain")
+    } }
 }
 
 /// Which sandbox publishing settings are missing, so the screen can say so instead of hiding the section.
@@ -135,5 +162,5 @@ struct EbaySetupCard: View {
         Button { showSettings = true } label: { Label("Open Settings", systemImage: "gearshape").frame(maxWidth: .infinity).padding(12) }
             .buttonStyle(.borderedProminent).accessibilityIdentifier("ebaySetupSettings")
     }
-    .sheet(isPresented: $showSettings, onDismiss: { workflow.reloadServices() }) { SettingsView() } }
+    .sheet(isPresented: $showSettings, onDismiss: { workflow.reloadServices() }) { SettingsView(store: workflow.store) } }
 }

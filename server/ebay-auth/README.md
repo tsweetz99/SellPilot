@@ -61,6 +61,13 @@ Real listings use the **Production** keyset. In addition to the Sandbox setup ab
 2. Netlify variables: `EBAY_PRODUCTION_RUNAME` (that RuName). `EBAY_PRODUCTION_APP_ID` and `EBAY_PRODUCTION_CERT_ID` are already there if app tokens are enabled. Redeploy.
 3. In the app, see `Docs/GoingLive.md`.
 
+## eBay setup for the app (`/api/ebay-config`)
+
+`GET /api/ebay-config` returns `{"production":{"appID":"...","ruName":"..."}}` from `EBAY_PRODUCTION_APP_ID` and `EBAY_PRODUCTION_RUNAME`.
+The app reads it so that nobody types an App ID or redirect name in, and the values can change without an app update. Both are public
+(eBay shows them in its own sign-in address); the Cert ID is never returned. It answers `503` until both variables are set and `500` if the
+App ID is not a Production one (it must contain `-PRD-`). Quick check: `curl -s https://<site>/api/ebay-config`.
+
 ## The AI service (`/api/ai`)
 
 The same site also runs SellPilot's hosted AI, so people do not need their own Anthropic key. The app sends photos (or the

@@ -27,20 +27,23 @@ struct ListingReviewView: View {
             editor(index)
             PilotCard {
                 Text("Publish / Export").font(.headline)
-                Text(workflow.services.ebaySetup == .notConfigured ? "Export prepares copy and original photos. You post the listing yourself; mock publishing never posts to a marketplace." : "Export prepares copy and original photos if you would rather post it yourself. To list on eBay directly, use Publish to eBay below.").font(.caption).foregroundStyle(PilotTheme.muted)
+                Text(AppMode.current == .developer && workflow.services.ebaySetup == .notConfigured ? "Export prepares copy and original photos. You post the listing yourself; mock publishing never posts to a marketplace." : (workflow.services.ebaySetup == .notConfigured ? "Export prepares copy and original photos, so you can post the listing yourself." : "Export prepares copy and original photos if you would rather post it yourself. To list on eBay directly, use Publish to eBay below.")).font(.caption).foregroundStyle(PilotTheme.muted)
                 HStack { Button("Copy title") { UIPasteboard.general.string = workflow.item.listings[index].title; copied = true }; Button("Copy description") { UIPasteboard.general.string = workflow.item.listings[index].description; copied = true } }.buttonStyle(.bordered)
                 Button("Copy full listing") { UIPasteboard.general.string = workflow.item.listings[index].fullText; copied = true }.buttonStyle(.bordered)
                 if copied { Text("Copied to clipboard").font(.caption).foregroundStyle(PilotTheme.accent) }
                 PrimaryButton(title: workflow.item.listings[index].marketplace == .facebook ? "Prepare Facebook Listing" : "Export listing package", icon: "square.and.arrow.up") { Task { await export(index, photosOnly: false) } }
                 Button("Share original photos") { Task { await export(index, photosOnly: true) } }.buttonStyle(.bordered)
-                if workflow.item.listings[index].marketplace == .ebay && workflow.services.ebaySetup == .notConfigured { Button("Publish to eBay (mock)") { Task { await workflow.mockPublish(index) } }.buttonStyle(.bordered) }
+                if AppMode.current == .developer && workflow.item.listings[index].marketplace == .ebay && workflow.services.ebaySetup == .notConfigured { Button("Publish to eBay (mock)") { Task { await workflow.mockPublish(index) } }.buttonStyle(.bordered) }
                 if workflow.item.listings[index].mockPublishReference != nil { Text("Mock publish recorded. No listing was posted.").font(.caption) }
             }
             if workflow.item.listings[index].marketplace == .ebay {
                 switch workflow.services.ebaySetup {
                 case .ready: EbayPublishCard(workflow: workflow, index: index)
                 case .needsSignIn: EbayConnectCard(workflow: workflow)
-                case .notConfigured: let missing = EbaySetupReport.missing(live: workflow.services.ebayIsLive); if !missing.isEmpty { EbaySetupCard(missing: missing, workflow: workflow) }
+                case .turnedOff: EbayTurnedOffCard(workflow: workflow)
+                case .notConfigured:
+                    if AppMode.current == .public { EbayUnavailableCard(workflow: workflow) }
+                    else { let missing = EbaySetupReport.missing(live: workflow.services.ebayIsLive); if !missing.isEmpty { EbaySetupCard(missing: missing, workflow: workflow) } }
                 }
             }
         }
