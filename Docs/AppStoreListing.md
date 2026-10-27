@@ -1,8 +1,9 @@
 # App Store listing: SellPilot 1.0
 
-Draft copy for App Store Connect. Each field shows its limit; `python3 scripts/check_app_store_listing.py` checks them.
-Anything marked **[needs hosted AI]** describes a feature that works only once the studio-hosted AI service exists (see
-"Before you submit"). Do not submit copy that promises it until then.
+Copy for App Store Connect. Each field shows its limit; `python3 scripts/check_app_store_listing.py` checks them.
+It describes the app as it is today: the studio-hosted AI service is live, publishing to eBay is built in and off by default,
+the bundle identifier is `com.tidewrightstudios.sellpilot`, and the version is 1.0 (build 1). Re-read it against the app
+before pasting if anything changes.
 
 ## Fields
 
@@ -83,19 +84,22 @@ left out of the name, subtitle and keywords, because Apple can reject listings t
 
 ## App Privacy ("nutrition label")
 
-Answers are for the hosted-AI version and follow what the app does today. Confirm each against Apple's definitions when
-filling in the form; the right answer depends on whether the AI service keeps anything.
+Answers follow what the app does today and match the privacy manifest inside the app (`SellPilot/PrivacyInfo.xcprivacy`), which a
+test keeps in step. Confirm each against Apple's definitions when filling in the form.
 
 | Data type | Collected? | Linked to the user? | Tracking? | Purpose |
 |---|---|---|---|---|
-| Photos or Videos | Yes, sent to the AI service for identification **[needs hosted AI]** | No | No | App functionality |
-| Other User Content (item descriptions) | Yes, sent with the photos **[needs hosted AI]** | No | No | App functionality |
+| Photos or Videos | Yes, sent to the AI service for identification | No | No | App functionality |
+| Other User Content (item descriptions) | Yes, sent with the photos | No | No | App functionality |
 | Identifiers | A random install code used to limit abuse. Likely "Device ID" or "Other identifiers" | No | No | App functionality |
 | Everything else (contacts, location, health, purchases, browsing, diagnostics, usage) | No | n/a | n/a | n/a |
 
 Notes:
-- If the hosted AI service forwards photos to the model and keeps nothing, Apple's guidance can treat that as data that is
-  processed but not collected. If it stores anything, even briefly in logs, declare it as above.
+- The AI service passes photos and descriptions to Anthropic's Claude and keeps nothing: no photos, descriptions or answers are
+  stored, and its logs hold counts only. Apple's guidance can treat data that is processed but not retained as not collected;
+  the safer choice, and what the manifest does, is to declare it as above.
+- The hosting provider (Netlify) keeps ordinary server logs such as IP address and time. If Apple's form asks about that, declare
+  it under Identifiers or Diagnostics, not linked to the user, for App Functionality (security and abuse limits).
 - eBay sign-in goes to eBay; SellPilot stores the tokens only in the phone's Keychain.
 - Declare "Data Not Used to Track You" for every row: there is no advertising or analytics.
 
@@ -104,7 +108,7 @@ Notes:
 ```text
 SellPilot helps people turn photos of items they want to sell into a priced listing.
 
-No account or sign-in is needed to review the app. From Home, tap "Sell Something", then "Try with a labeled demo photo", then "Analyze photos" and continue through the steps to the Ready screen. Photo identification uses an AI service and needs an internet connection.
+No account or sign-in is needed to review the app. From Home, tap "Sell Something", then "Try with a labeled demo photo", then "Analyze photos". The first time, the app asks permission to send photos to its AI service (SellPilot's service, which uses Anthropic's Claude); tap "Allow and analyze". Continue through the steps to the Ready screen. Photo identification needs an internet connection. If you prefer not to allow it, tap "I'll enter the details myself" and the rest of the flow works the same.
 
 Publishing to eBay is optional and off by default. It needs a real eBay seller account, so reviewers do not need it. To see the screens without publishing, stop at "Ready".
 
@@ -125,16 +129,21 @@ built-in "DEMO PHOTO" placeholder. Suggested set, in order:
 5. Books: "Books by barcode" (ISBN lookup filled in)
 6. Backup/Settings: "Yours to keep" (backup and privacy)
 
-## Before you submit
+## Status before submitting
 
-1. **Hosted AI service [blocking].** The app currently needs each user's own Anthropic key. For a free public app, build the
-   service the studio will run: it receives the photos, calls Claude, applies per-install limits and returns the result.
-   Then update the privacy policy and support page, and the App Privacy answers above.
-2. **Bundle identifier [blocking, permanent].** The project uses the placeholder `com.sellpilot.sellpilot`. Pick the real one
-   (for example `com.tidewrightstudios.sellpilot`) before the first upload; it cannot change after the app exists in App Store Connect.
-3. **Version.** The project says 0.1. Set the marketing version to 1.0 and a build number.
-4. **Name availability.** Check that "SellPilot: Photo to Listing" is free in App Store Connect; names are first-come.
-5. **Apple Developer account.** The studio site says the enrollment is under Sweetz Holdings LLC. Confirm the account is active
-   and the paid-apps and tax forms are not needed for a free app.
-6. **Review the privacy policy** with someone qualified, and review eBay's API license terms.
-7. **TestFlight** on two or three other phones.
+**Done**
+- Hosted AI service live, with spending limits and an off switch; consent prompt and Settings switch in the app.
+- Real bundle identifier (`com.tidewrightstudios.sellpilot`), version 1.0, build 1.
+- App icon, privacy manifest, export-compliance setting (HTTPS only), usage descriptions.
+- eBay setup built in; publishing off by default; developer fields only in debug builds.
+- Backup and restore; accessibility audits (default size, largest size, dark mode).
+- Public privacy policy, support page and product page on tidewrightstudios.com.
+
+**Still to do**
+1. **App Store Connect record.** Create or confirm the app with this exact bundle identifier and a free name ("SellPilot: Photo to Listing" is not guaranteed to be available; names are first-come). Paste the fields above, the URLs, the age rating and the App Privacy answers.
+2. **Screenshots** (6.9-inch, 1320 x 2868): see the plan above. They need real item photos.
+3. **Archive and upload** a Release build from Xcode (Product, Archive), then add it to TestFlight.
+4. **TestFlight** on two or three other phones: the AI consent prompt, eBay connect with someone else's account, backup and restore.
+5. **App Attest** (proof a request comes from a genuine SellPilot) before the AI service has real traffic; until then the limits cap the damage.
+6. **Review the privacy policy** with someone qualified, and review eBay's API license terms before public release.
+7. **Apple Developer account.** The studio site says the enrollment is under Sweetz Holdings LLC. Confirm it is active and, for a free app, that no paid-apps agreement is required.

@@ -15,6 +15,9 @@ def group(folder):
  for catalog in sorted((root/folder).glob('*.xcassets')):
   ref=add(f'isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "{catalog.name}"; sourceTree = "<group>";')
   refs.append(ref);resource_builds.append(add(f'isa = PBXBuildFile; fileRef = {ref};'))
+ for manifest in sorted((root/folder).glob('*.xcprivacy')):
+  ref=add(f'isa = PBXFileReference; lastKnownFileType = text.xml; path = "{manifest.name}"; sourceTree = "<group>";')
+  refs.append(ref);resource_builds.append(add(f'isa = PBXBuildFile; fileRef = {ref};'))
  g=add(f'isa = PBXGroup; path = "{folder}"; sourceTree = "<group>"; children = ({",".join(refs)});')
  return g,builds,resource_builds
 groups=[];targets=[];products=[]
@@ -33,7 +36,7 @@ for name,folder,kind in [('SellPilot','SellPilot','application'),('SellPilotTest
  product=add(f'isa = PBXFileReference; explicitFileType = {"wrapper.application" if ext=="app" else "wrapper.cfbundle"}; path = {name}.{ext}; sourceTree = BUILT_PRODUCTS_DIR;');products.append(product)
  settings=f'PRODUCT_NAME = "$(TARGET_NAME)"; PRODUCT_BUNDLE_IDENTIFIER = com.tidewrightstudios.{name.lower()}; GENERATE_INFOPLIST_FILE = YES; TARGETED_DEVICE_FAMILY = "1,2"; CODE_SIGN_STYLE = Automatic; MARKETING_VERSION = 1.0; CURRENT_PROJECT_VERSION = 1; '
  if kind=='application':
-  settings+='ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; INFOPLIST_KEY_CFBundleDisplayName = SellPilot; INFOPLIST_KEY_UILaunchScreen_Generation = YES; INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES; INFOPLIST_KEY_NSCameraUsageDescription = "Take photos of items you want to sell."; INFOPLIST_KEY_NSMicrophoneUsageDescription = "Dictate seller notes."; INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe your dictated seller notes."; INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"; '
+  settings+='ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO; INFOPLIST_KEY_CFBundleDisplayName = SellPilot; INFOPLIST_KEY_UILaunchScreen_Generation = YES; INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES; INFOPLIST_KEY_NSCameraUsageDescription = "Take photos of items you want to sell."; INFOPLIST_KEY_NSMicrophoneUsageDescription = "Dictate seller notes."; INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe your dictated seller notes."; INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"; '
  elif kind=='bundle.unit-test': settings+='TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SellPilot.app/SellPilot"; BUNDLE_LOADER = "$(TEST_HOST)"; '
  else: settings+='TEST_TARGET_NAME = SellPilot; '
  config=configs(settings)
