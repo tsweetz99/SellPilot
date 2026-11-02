@@ -21,7 +21,7 @@ enum EbayDeployment {
 
     struct Identity: Codable, Equatable { var appID: String; var ruName: String }
 
-    private static let cacheKey = "ebayProductionIdentity"
+    static let cacheKey = "ebayProductionIdentity"
 
     /// Developers can point at another server with the saved token-server setting.
     static var tokenServer: URL { APIKeyStore.load(.ebayAuthProxy).flatMap(URL.init(string:)) ?? defaultTokenServer }
