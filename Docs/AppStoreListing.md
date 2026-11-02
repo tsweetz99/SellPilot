@@ -147,6 +147,8 @@ The files are `01-photograph` to `06-settings` (the set above) plus `00-home`. P
 ## Status before submitting
 
 **Done**
+- iPhone only for 1.0 (no iPad screenshots needed; iPad would need layout testing first).
+- The App Store Connect record exists (SellPilot: Photo to Listing, bundle `com.tidewrightstudios.sellpilot`).
 - Hosted AI service live, with spending limits and an off switch; consent prompt and Settings switch in the app.
 - Real bundle identifier (`com.tidewrightstudios.sellpilot`), version 1.0, build 1.
 - App icon, privacy manifest, export-compliance setting (HTTPS only), usage descriptions.

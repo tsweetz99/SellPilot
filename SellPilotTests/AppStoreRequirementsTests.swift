@@ -32,6 +32,11 @@ final class AppStoreRequirementsTests: XCTestCase {
         XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "ITSAppUsesNonExemptEncryption") as? Bool, false, "HTTPS only")
     }
 
+    /// Version 1.0 is iPhone-only: an iPad build would need iPad screenshots and layouts that have not been tested.
+    func testTheAppIsIPhoneOnlyForVersion1() {
+        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "UIDeviceFamily") as? [Int], [1])
+    }
+
     func testIdentifierAndVersionAreTheFinalOnes() {
         XCTAssertEqual(Bundle.main.bundleIdentifier, "com.tidewrightstudios.sellpilot")
         XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String, "1.0")
