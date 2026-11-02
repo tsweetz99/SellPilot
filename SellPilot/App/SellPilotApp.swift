@@ -3,6 +3,9 @@ import SwiftData
 @main struct SellPilotApp: App {
     @State private var store: ItemStore?
     @State private var startupError: String?
+    #if DEBUG
+    @State private var paywallDemo = ProcessInfo.processInfo.arguments.contains("--paywall-demo")
+    #endif
     private var container: ModelContainer?
     init() {
         do {
@@ -29,8 +32,11 @@ import SwiftData
             HomeView(store: store).tint(PilotTheme.accent)
                 // Learn eBay's current sign-in setup from the server, so nobody types it in.
                 .task { if !ProcessInfo.processInfo.arguments.contains("--ui-testing") { await EbayDeployment.refresh() } }
+                // Prices, purchases made elsewhere, and what the seller has left.
+                .task { await PurchaseStore.shared.start() }
                 #if DEBUG
                 .task { ScreenshotDemo.seed(store) }
+                .sheet(isPresented: $paywallDemo) { PaywallView(reason: "You've used your free analyses. Choose a plan or a pack to keep analyzing photos, or enter the details yourself.") }
                 #endif
         }
         else { ContentUnavailableView("Saved data unavailable", systemImage: "externaldrive.badge.exclamationmark", description: Text(startupError ?? "Restart the app to try again. Your store has not been deleted.")) }

@@ -15,6 +15,11 @@ const reply = (status, body, retryAfterSeconds) => ({ status, body, ...(retryAft
 const fail = (status, error, message, retryAfterSeconds) => reply(status, { error, message }, retryAfterSeconds);
 const PAUSED = "AI identification is paused right now. You can still enter the item's details yourself.";
 
+function exhaustedMessage(allowance) {
+  if (allowance.plus) return `You've used this period's ${allowance.plus.limit} analyses with SellPilot Plus. They renew ${new Date(allowance.plus.renews).toISOString().slice(0, 10)}, and you can add a pack of 25 any time. You can also enter the details yourself.`;
+  return "You've used your free analyses. Choose a plan or a pack to keep analyzing photos, or enter the details yourself.";
+}
+
 function decodedSize(data) {
   return Math.floor((data.length * 3) / 4) - (data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0);
 }
@@ -71,9 +76,11 @@ function upstreamBody(request, env) {
  * @param {{method: string, body: unknown, env: Record<string, string|undefined>, fetchImpl?: typeof fetch,
  *          installKey?: string|null, address?: string|null,
  *          budget?: {spend(args: {installKey: string, addressHash: string, units: number}): Promise<{allowed: boolean, retryAfterSeconds: number, scope?: string}>},
+ *          allowances?: ReturnType<typeof import("./allowances.mjs").createAllowances>, entitlement?: string|null,
  *          log?: (line: string) => void}} request
+ * `allowances` is the paywall: without it every identification is free (tests, or the studio switching the paywall off).
  */
-export async function handleAI({ method, body, env, fetchImpl = fetch, installKey = null, address = null, budget = null, log = () => {} }) {
+export async function handleAI({ method, body, env, fetchImpl = fetch, installKey = null, address = null, budget = null, allowances = null, entitlement = null, log = () => {} }) {
   if (method !== "POST") return fail(405, "method_not_allowed", "Use POST.");
   // Off unless the studio switches it on: this is the spending switch.
   if (env.AI_ENABLED !== "true") return fail(503, "ai_unavailable", PAUSED);
@@ -84,6 +91,14 @@ export async function handleAI({ method, body, env, fetchImpl = fetch, installKe
 
   const request = validate(body);
   if (request.failure) return request.failure;
+
+  // Paying for an analysis comes first, so someone with nothing left never touches the spending allowances.
+  // Only identifications cost an allowance; the cheap text lookups that fill in eBay details do not.
+  let plan = null;
+  if (allowances && request.task === "identify") {
+    try { plan = await allowances.plan({ installKey: key, entitlement }); } catch { return fail(503, "limiter_unavailable", PAUSED); }
+    if (plan.exhausted) return reply(402, { error: "allowance_exhausted", message: exhaustedMessage(plan.allowance), allowance: plan.allowance });
+  }
 
   if (!budget) return fail(503, "limiter_unavailable", PAUSED);
   const addressHash = createHash("sha256").update(String(address ?? "unknown")).digest("hex").slice(0, 16);
@@ -127,8 +142,11 @@ export async function handleAI({ method, body, env, fetchImpl = fetch, installKe
     const wanted = request.task === "identify" ? IDENTIFY_TOOL : FACTS_TOOL;
     const tool = (json.content ?? []).find((block) => block?.type === "tool_use" && block.name === wanted);
     if (!tool) return fail(502, "upstream_invalid", "The AI service did not return a usable answer. Try again.");
-    // Only the answer, in the same shape the app already reads. Nothing else from the upstream reply is relayed.
-    return reply(200, { content: [{ type: "tool_use", name: tool.name, input: tool.input }] });
+    // Only the answer, in the same shape the app already reads, plus what the seller has left. Nothing else from the upstream reply is relayed.
+    // The analysis is paid for only now that it worked. If the allowance cannot be written the seller still gets the answer.
+    let allowance;
+    if (plan) { try { allowance = await allowances.commit(plan); } catch { allowance = plan.allowance; } }
+    return reply(200, { content: [{ type: "tool_use", name: tool.name, input: tool.input }], ...(allowance ? { allowance } : {}) });
   };
 
   const result = await outcome();

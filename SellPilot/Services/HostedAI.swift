@@ -14,6 +14,9 @@ enum HostedAI {
         return defaultEndpoint
     }
 
+    /// Where the app asks what it has left and redeems a bought pack.
+    static func accountEndpoint() -> URL { endpoint().appendingPathComponent("account") }
+
     static let disclosure = "To identify your item, the photos you analyze are sent to SellPilot's AI service, which uses Anthropic's Claude. They are not stored."
     static let providerName = "SellPilot AI"
 
@@ -25,6 +28,13 @@ if status == 401 { return "This copy of SellPilot could not be verified. Update 
         return status >= 400 ? "SellPilot's AI service isn't available right now. Try again later, or enter the details yourself." : nil
     }
 
+    /// Out of analyses (402) is a prompt to choose a plan, not an error to show in an alert.
+    static func failure(status: Int, body: Data) -> Error? {
+        guard status == 402 else { return nil }
+        let message = ((try? JSONSerialization.jsonObject(with: body)) as? [String: Any])?["message"] as? String
+        return HostedAIError(message: message ?? "You've used your free analyses. Choose a plan or a pack to keep going.", allowance: AIAllowance.parse(body))
+    }
+
     /// Only repeat what is safe: a limit or a timeout is not worth retrying, a brief outage is.
     static let retryable: Set<Int> = [502, 503]
 
@@ -33,6 +43,8 @@ if status == 401 { return "This copy of SellPilot could not be verified. Update 
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "content-type")
         request.setValue(installKey, forHTTPHeaderField: "x-sellpilot-install")
+        // Proof of SellPilot Plus, signed by Apple. The server checks it; without one the free allowance or a pack pays.
+        if let entitlement = EntitlementCache.jws { request.setValue(entitlement, forHTTPHeaderField: "x-sellpilot-entitlement") }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         return request
     }
@@ -76,7 +88,10 @@ struct HostedIdentificationService: ProductIdentificationService {
 
     func identify(photos: [SellItemPhoto]) async throws -> ProductIdentification {
         guard !photos.isEmpty else { throw ServiceError.invalid("Add at least one photo.") }
-        let data = try await ClaudeAPI.send(try makeRequest(photos: photos), session: session, retryDelay: configuration.retryDelay, retryable: HostedAI.retryable, errorMessage: HostedAI.errorMessage)
+        let data: Data
+        do { data = try await ClaudeAPI.send(try makeRequest(photos: photos), session: session, retryDelay: configuration.retryDelay, retryable: HostedAI.retryable, errorMessage: HostedAI.errorMessage, failure: HostedAI.failure) }
+        catch let error as HostedAIError { if let allowance = error.allowance { await MainActor.run { PurchaseStore.shared.record(allowance) } }; throw error }
+        if let allowance = AIAllowance.parse(data) { await MainActor.run { PurchaseStore.shared.record(allowance) } }
         return try ClaudeIdentificationService.parse(data, photoCount: min(photos.count, configuration.maxPhotos), provider: HostedAI.providerName)
     }
 }

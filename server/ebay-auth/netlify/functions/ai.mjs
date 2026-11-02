@@ -1,8 +1,11 @@
 import { getStore } from "@netlify/blobs";
 import { handleAI, LIMITS } from "../../lib/ai.mjs";
 import { createBudget } from "../../lib/rateLimit.mjs";
+import { createAllowances } from "../../lib/allowances.mjs";
+import { allowanceOptions } from "../../lib/allowanceConfig.mjs";
 
 // POST https://<your-site>/api/ai   {"task":"identify","photos":[{"data":"<base64 JPEG>"}]}  or  {"task":"facts","description":"..."}
+// Headers: x-sellpilot-install (this install's random code) and, for SellPilot Plus, x-sellpilot-entitlement (Apple's signed subscription).
 export default async (request, context) => {
   // A little over the photo cap, because the photos travel as base64 text.
   const text = await request.text();
@@ -19,14 +22,18 @@ export default async (request, context) => {
     addressPerHour: Number(process.env.AI_UNITS_PER_ADDRESS_PER_HOUR) || 90,
     globalPerDay: Number(process.env.AI_UNITS_PER_DAY) || 1500,
   });
+  // AI_PAYWALL=off makes every analysis free (the daily caps above still apply).
+  const allowances = process.env.AI_PAYWALL === "off" ? null : createAllowances(blobStore("ai-allowances"), allowanceOptions(process.env));
 
   const result = await handleAI({
     method: request.method, body, env: process.env, installKey: request.headers.get("x-sellpilot-install"),
+    entitlement: request.headers.get("x-sellpilot-entitlement"), allowances,
     address: context?.ip ?? request.headers.get("x-nf-client-connection-ip"), budget, log: (line) => console.log(line),
   });
   return json(result.status, result.body, result.retryAfterSeconds ? { "Retry-After": String(result.retryAfterSeconds) } : {});
 };
 
+const blobStore = (name) => { const store = getStore(name); return { get: (key) => store.get(key, { type: "json" }), set: (key, value) => store.setJSON(key, value) }; };
 const json = (status, payload, extra = {}) => new Response(JSON.stringify(payload), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...extra } });
 
 export const config = { path: "/api/ai" };

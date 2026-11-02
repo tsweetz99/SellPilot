@@ -7,6 +7,8 @@ import Observation
     var notice: String?
     /// Set when automatic identification failed, so the capture screen can offer manual entry.
     var identificationFailed = false
+    /// Set when the seller is out of analyses; the screen then shows the plans, with this as the reason.
+    var paywallReason: String?
     /// eBay category suggestions and the chosen category's item specifics, used by the publish card.
     var ebayCategoryChoices: [EbayCategory] = []
     var ebayAspects: [EbayAspect] = []
@@ -30,6 +32,7 @@ import Observation
                 identificationFailed = false
                 let result: ProductIdentification
                 do { result = try await services.identification.identify(photos: item.orderedPhotos) }
+                catch let error as HostedAIError { paywallReason = error.message; return }   // out of analyses: show the plans, not an error
                 catch { identificationFailed = true; throw error }
                 item.identification = result; apply(result.product); item.condition = result.detectedCondition; item.subcategory = result.subcategory; item.color = result.color; item.confidenceScore = result.confidenceScore
                 applyBookDetails()

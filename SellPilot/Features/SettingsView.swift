@@ -14,6 +14,9 @@ struct SettingsView: View {
     @State private var hasKey = APIKeyStore.load() != nil
     @State private var aiAllowed = AIConsent.given
     @State private var loadingEbay = false
+    @State private var purchases = PurchaseStore.shared
+    @State private var showPlans = false
+    @State private var showManage = false
     private let developer = AppMode.current == .developer
     @State private var message: String?
     @State private var ebayApp = ""
@@ -49,6 +52,22 @@ struct SettingsView: View {
         }
     }
 
+    /// What the seller has left, the plans, and the two things Apple requires: manage and restore.
+    private var plusSection: some View {
+        Section {
+            if let allowance = purchases.allowance { Text(allowance.summary) }
+            Button(purchases.hasPlus ? "Change plan or buy a pack" : "See plans") { showPlans = true }.accessibilityIdentifier("seePlans")
+            if purchases.hasPlus { Button("Manage subscription") { showManage = true } }
+            Button("Restore purchases") { Task { await purchases.restore() } }.disabled(purchases.busy)
+            if let note = purchases.message { Text(note).font(.footnote).foregroundStyle(PilotTheme.muted) }
+        } header: { Text("SellPilot Plus") } footer: {
+            Text("Your first \(PlusProduct.freeAnalyses) photo analyses are free. After that, Plus gives \(PlusProduct.plusPerPeriod) analyses a month, or you can buy a pack of \(PlusProduct.packSize). Entering details yourself is always free.")
+        }
+        .sheet(isPresented: $showPlans) { PaywallView() }
+        .manageSubscriptionsSheet(isPresented: $showManage)
+        .task { await purchases.refreshAllowance() }
+    }
+
     /// Learns eBay's current sign-in setup from the server (so nobody types it in), then builds the connection.
     private func loadEbay() async {
         loadingEbay = true; defer { loadingEbay = false }
@@ -71,6 +90,7 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 if let store { backupSection(store) }
+                if purchases.paywallOn && !hasKey { plusSection }
                 Section { Link("Privacy policy", destination: PrivacyPolicy.url) } footer: { Text("What SellPilot keeps on your phone and what it sends to other services.") }
                 Section {
                     Toggle("Allow AI identification", isOn: $aiAllowed).onChange(of: aiAllowed) { _, allowed in AIConsent.given = allowed }

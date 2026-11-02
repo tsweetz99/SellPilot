@@ -53,7 +53,7 @@ final class SellPilotUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 5))
         func reveal(_ element: XCUIElement) -> Bool { for _ in 0..<12 { if element.exists && element.isHittable { return true }; app.swipeUp() }; return element.exists }
         XCTAssertTrue(reveal(app.textFields["Ship-from ZIP code"]), "the ZIP code field is there")
-        XCTAssertTrue(app.switches["Publish to eBay"].exists, "the publish switch is there")
+        XCTAssertTrue(reveal(app.switches["Publish to eBay"]), "the publish switch is there")
         XCTAssertTrue(app.staticTexts["eBay"].exists || app.staticTexts["EBAY"].exists, "an eBay section")
         for developerOnly in ["eBay App ID", "eBay Cert ID", "Sandbox App ID", "Sandbox user token", "Anthropic API key (optional)", "Production redirect name (RuName)", "Token server URL (optional)"] {
             XCTAssertFalse(app.secureTextFields[developerOnly].exists || app.textFields[developerOnly].exists, "\(developerOnly) should not show in the public app")

@@ -38,6 +38,9 @@ Include a book's barcode in a photo and SellPilot reads the ISBN on your phone, 
 PUBLISH OR EXPORT
 Publish straight to your eBay seller account after a final review that shows the price, condition, category and your shipping, payment and return policies. Or copy and export the listing for any other marketplace. You can end an eBay listing from the app.
 
+FREE TO TRY
+Your first 5 photo analyses are free. After that, choose SellPilot Plus (60 analyses a month) or buy a pack of 25. Entering details yourself, price research and exporting listings are always free.
+
 YOURS TO KEEP
 Your items and photos are stored on your phone. There are no accounts, no ads and no tracking. Back up everything to Files or iCloud Drive and restore it any time.
 
@@ -72,7 +75,7 @@ First release.
 |---|---|
 | Primary category | Shopping |
 | Secondary category | Productivity |
-| Price | Free |
+| Price | Free to download, with in-app purchases (see Pricing) |
 | Support URL | https://tidewrightstudios.com/sellpilot/support/ |
 | Marketing URL | https://tidewrightstudios.com/sellpilot/ |
 | Privacy policy URL | https://tidewrightstudios.com/sellpilot/privacy/ |
@@ -81,6 +84,26 @@ First release.
 
 "eBay" appears in the description only, to say what the app connects to, with the trademark line above. It is deliberately
 left out of the name, subtitle and keywords, because Apple can reject listings that use another company's mark there.
+
+## Pricing and in-app purchases
+
+The app is free to download. Photo analysis runs on the studio's AI account, so it is paid for like this (the server counts it; see
+`server/ebay-auth/README.md`):
+
+| Product | Type | Price | Id |
+|---|---|---|---|
+| SellPilot Plus Monthly | Auto-renewable subscription | $4.99 | `com.tidewrightstudios.sellpilot.plus.monthly` |
+| SellPilot Plus Yearly | Auto-renewable subscription | $34.99 | `com.tidewrightstudios.sellpilot.plus.yearly` |
+| 25 analyses | Consumable | $2.99 | `com.tidewrightstudios.sellpilot.analyses.25` |
+
+Both subscriptions go in one group, "SellPilot Plus", with Yearly ranked above Monthly. Each gives 60 analyses per 30 days.
+Everyone gets 5 free analyses once per install; manual entry, price research and export are always free. At about 3 to 6 cents
+per analysis (an estimate: check the Anthropic console), 60 analyses cost at most about $3.60 against about $4.24 after Apple's
+15% Small Business Program fee on the monthly plan.
+
+Apple needs, for each product: a display name, a description and a review screenshot (the plans screen), plus the Paid
+Applications Agreement with bank and tax details. The subscriptions need the privacy policy link and Terms of Use link, which
+the plans screen and the listing already show (Apple's standard terms: https://www.apple.com/legal/internet-services/itunes/dev/stdeula/).
 
 ## App Privacy ("nutrition label")
 
@@ -95,6 +118,10 @@ test keeps in step. Confirm each against Apple's definitions when filling in the
 | Everything else (contacts, location, health, purchases, browsing, diagnostics, usage) | No | n/a | n/a | n/a |
 
 Notes:
+- With purchases, the AI service also receives Apple's signed transaction (product and transaction numbers, no name or payment
+  details) to check a subscription or add a pack, and keeps counts against the install code. Apple's form may call that "Purchases"
+  (Purchase History), not linked to the user, for App Functionality. Decide before publishing the privacy answers, and update the
+  privacy policy page to match.
 - The AI service passes photos and descriptions to Anthropic's Claude and keeps nothing: no photos, descriptions or answers are
   stored, and its logs hold counts only. Apple's guidance can treat data that is processed but not retained as not collected;
   the safer choice, and what the manifest does, is to declare it as above.
@@ -109,6 +136,8 @@ Notes:
 SellPilot helps people turn photos of items they want to sell into a priced listing.
 
 No account or sign-in is needed to review the app. From Home, tap "Sell Something", then "Try with a labeled demo photo", then "Analyze photos". The first time, the app asks permission to send photos to its AI service (SellPilot's service, which uses Anthropic's Claude); tap "Allow and analyze". Continue through the steps to the Ready screen. Photo identification needs an internet connection. If you prefer not to allow it, tap "I'll enter the details myself" and the rest of the flow works the same.
+
+Photo analysis includes 5 free analyses, then SellPilot Plus or a pack. To test a purchase, use a Sandbox Apple ID: open Settings (from Home), tap "See plans" and buy any plan. Purchases are verified by SellPilot's service. Restore purchases is on the same screen. Nothing in the app requires a purchase to review it: "I'll enter the details myself" works at any point.
 
 Publishing to eBay is optional and off by default. It needs a real eBay seller account, so reviewers do not need it. To see the screens without publishing, stop at "Ready".
 
@@ -157,6 +186,11 @@ The files are `01-photograph` to `06-settings` (the set above) plus `00-home`. P
 - Public privacy policy, support page and product page on tidewrightstudios.com.
 
 **Still to do**
+0. **Paywall launch steps.** In App Store Connect: sign the Paid Applications Agreement (bank and tax), create the subscription group and
+   the three products above with their prices, names, descriptions and a plans-screen review screenshot. Deploy the server (merging to
+   main redeploys Netlify). Then buy each product with a Sandbox Apple ID in TestFlight and check: the plans screen shows the prices,
+   a subscription raises the allowance to 60, a pack adds 25, Restore purchases works, and a refunded or expired subscription stops
+   counting. This is the one thing the tests cannot prove, because only Apple can sign a real transaction.
 1. **App Store Connect record.** Create or confirm the app with this exact bundle identifier and a free name ("SellPilot: Photo to Listing" is not guaranteed to be available; names are first-come). Paste the fields above, the URLs, the age rating and the App Privacy answers.
 2. **Screenshots** (6.9-inch, 1320 x 2868): see the plan above. They need real item photos.
 3. **Archive and upload** a Release build from Xcode (Product, Archive), then add it to TestFlight.

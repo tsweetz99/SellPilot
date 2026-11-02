@@ -31,6 +31,7 @@ struct CaptureView: View {
             Button { workflow.skipIdentification() } label: { Label("Skip — I'll enter the details myself", systemImage: "square.and.pencil").frame(maxWidth: .infinity).padding(12) }.buttonStyle(.bordered).accessibilityIdentifier("skipIdentification")
         }
         if !workflow.item.photos.isEmpty, let disclosure = workflow.services.identification.disclosure { Text(disclosure).font(.caption).foregroundStyle(PilotTheme.muted) }
+        if !workflow.item.photos.isEmpty, workflow.services.usesLiveIdentification, PurchaseStore.shared.paywallOn, let allowance = PurchaseStore.shared.allowance { Text(allowance.summary).font(.caption.bold()).foregroundStyle(PilotTheme.accent).accessibilityIdentifier("allowanceSummary") }
     }.sheet(isPresented: $camera) { CameraPicker(onImage: add) }
         .onChange(of: selections) { _, selected in Task { importing = true; defer { importing = false; selections = [] }; for selection in selected { do { if let data = try await selection.loadTransferable(type: Data.self) { add(data) } else { workflow.error = "One photo could not be imported." } } catch { workflow.error = error.localizedDescription } } } }
     }

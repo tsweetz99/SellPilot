@@ -112,6 +112,33 @@ python3 scripts/ai_check.py ~/Pictures/some-item.jpg
 Expected: `200` and a title, brand and category. `503 "paused"` means `AI_ENABLED` is not `true` or the key is missing; `429` means an
 allowance is used up; `422` means Claude rejected the photo.
 
+**The paywall (what pays for an analysis)**
+
+Only photo identifications are metered (the cheap text lookups that fill in eBay details are not). An analysis is paid for, in this
+order, by: **SellPilot Plus** (60 per 30 days from the first purchase, monthly or yearly), then the **free allowance** (5 per
+install, once), then **pack credits** (25 per pack, never expire). When none is left the answer is `402 allowance_exhausted` before
+anything is sent to Claude or counted against the spending allowances above. A failed analysis costs the seller nothing.
+
+- **Purchases are proved by Apple, not by the app.** The app sends Apple's signed subscription record in `X-SellPilot-Entitlement`
+  and, once per pack, its signed purchase to `POST /api/ai/account`. `lib/appleJws.mjs` checks the signature and the whole
+  certificate chain up to the pinned Apple Root CA - G3, then `lib/allowances.mjs` checks the bundle id, the product, the
+  environment, the expiry and that it was not refunded. Nothing the app says about itself is believed.
+- **Counts.** Subscription use is counted per subscription (not per install), so a new install code does not reset it. Free use
+  and credits are per install code. Each pack purchase is added once, however many times the app repeats the request.
+- **Credits stay on the iPhone that bought them** (they are tied to that install's code). Apple does not restore consumables.
+- `GET /api/ai/account` tells the app what is left, so the screens can say "3 free analyses left".
+
+| Variable | Needed | Meaning |
+|---|---|---|
+| `AI_PAYWALL` | no | `off` makes every analysis free (the daily caps above still apply). Anything else leaves the paywall on. |
+| `AI_FREE_ANALYSES` | no (5) | Free analyses per install. Keep it in step with `PlusProduct.freeAnalyses` in the app (a test checks the defaults). |
+| `AI_PLUS_PER_PERIOD` | no (60) | Plus analyses per 30 days. |
+| `AI_ACCEPT_SANDBOX` | no (true) | TestFlight and App Review purchases are "Sandbox". Leave this on; `false` refuses them. |
+| `APP_BUNDLE_ID` | no | Defaults to `com.tidewrightstudios.sellpilot`. |
+
+The products and their numbers are in `lib/products.mjs`; a test in the app's suite fails if the app's copy drifts from it.
+
 **Not in this version:** proof that a request comes from a genuine SellPilot (Apple App Attest). The install code and the address
-and global allowances limit the damage a script can do, but they do not stop one. Add App Attest before the app is widely
-used or if the service-wide cap is ever hit by traffic that is not real.
+and global allowances limit the damage a script can do, but they do not stop one. With the paywall this also means a script can
+claim the free allowance again by inventing install codes; the address and whole-service allowances bound that. Add App Attest
+before the app is widely used or if the service-wide cap is ever hit by traffic that is not real.
