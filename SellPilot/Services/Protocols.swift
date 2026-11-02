@@ -104,6 +104,10 @@ extension AppServices {
                 services.ebayNeedsSignIn = true   // everything is configured except the sign-in itself
             }
         }
+        #if DEBUG
+        // App Store screenshots: show the public app as a seller sees it (AI service named, eBay publishing off), without any network use.
+        if ScreenshotDemo.enabled { services.identification = HostedIdentificationService(); services.ebayTurnedOff = true; services.books = ScreenshotDemo.BookCatalog() }
+        #endif
         return services
     }
 }

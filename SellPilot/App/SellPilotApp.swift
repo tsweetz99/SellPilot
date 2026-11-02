@@ -29,6 +29,9 @@ import SwiftData
             HomeView(store: store).tint(PilotTheme.accent)
                 // Learn eBay's current sign-in setup from the server, so nobody types it in.
                 .task { if !ProcessInfo.processInfo.arguments.contains("--ui-testing") { await EbayDeployment.refresh() } }
+                #if DEBUG
+                .task { ScreenshotDemo.seed(store) }
+                #endif
         }
         else { ContentUnavailableView("Saved data unavailable", systemImage: "externaldrive.badge.exclamationmark", description: Text(startupError ?? "Restart the app to try again. Your store has not been deleted.")) }
     } }

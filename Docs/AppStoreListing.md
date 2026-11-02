@@ -129,6 +129,21 @@ built-in "DEMO PHOTO" placeholder. Suggested set, in order:
 5. Books: "Books by barcode" (ISBN lookup filled in)
 6. Backup/Settings: "Yours to keep" (backup and privacy)
 
+### Capturing them
+
+The captures come from a UI test that runs the debug-only sample data (`--screenshot-demo`; none of it is in Release builds)
+on the iPhone 17 Pro Max simulator (exactly 1320 x 2868). The photos stay out of git (`Screenshots/` is ignored):
+put JPEGs named `skates-1`...`skates-6`, `lights-1`, `book-1`...`book-3` in `Screenshots/demo/`, then
+
+```
+xcrun simctl status_bar booted override --time 9:41 --batteryState charged --batteryLevel 100 --cellularMode active --cellularBars 4 --wifiBars 3
+TEST_RUNNER_SELLPILOT_DEMO_PHOTOS=$PWD/Screenshots/demo TEST_RUNNER_SELLPILOT_SCREENSHOT_DIR=$PWD/Screenshots/appstore \
+  xcodebuild test -project SellPilot.xcodeproj -scheme SellPilot -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' \
+  -only-testing:SellPilotUITests/ScreenshotUITests
+```
+
+The files are `01-photograph` to `06-settings` (the set above) plus `00-home`. Prices, comparables and the book lookup in them are sample data.
+
 ## Status before submitting
 
 **Done**
