@@ -173,3 +173,80 @@ test("logs carry counts only, never photos, descriptions or answers", async () =
   assert.equal(lines.length, 2); assert.ok(!text.includes("SECRET") && !text.includes(jpeg()) && !text.includes("DEWALT") && !text.includes("sk-ant"));
   assert.match(lines[1], /"task":"identify".*"status":200.*"photos":2/);
 });
+
+// --- The paywall: identifications are paid for by a plan, a free allowance, or credits ---
+import { createAllowances } from "../lib/allowances.mjs";
+
+const paywall = (options = {}) => createAllowances(memoryStore(), { freeAnalyses: 2, verify: () => { throw new Error("no subscriptions in this test"); }, ...options });
+const ok = upstream(answer(IDENTIFY_TOOL, identification));
+
+test("with the paywall on, a successful analysis spends one free analysis and says how many are left", async () => {
+  const allowances = paywall();
+  const result = await call(identify(), ok, { allowances });
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.allowance, { free: 1, credits: 0, plus: null });
+  assert.deepEqual(result.body.content, [{ type: "tool_use", name: IDENTIFY_TOOL, input: identification }]);
+});
+
+test("when the free analyses are gone the answer is 402, nothing is sent to Claude, and no spending allowance is used", async () => {
+  const allowances = paywall({ freeAnalyses: 1 });
+  const budget = budgetFor();
+  assert.equal((await call(identify(), ok, { allowances, budget })).status, 200);
+  upstream.calls = [];
+  const result = await call(identify(), ok, { allowances, budget });
+  assert.equal(result.status, 402); assert.equal(result.body.error, "allowance_exhausted");
+  assert.match(result.body.message, /free analyses/); assert.deepEqual(result.body.allowance, { free: 0, credits: 0, plus: null });
+  assert.equal(upstream.calls.length, 0);
+});
+
+test("a failed analysis costs nothing", async () => {
+  const allowances = paywall({ freeAnalyses: 1 });
+  const failing = upstream({ error: { message: "overloaded" } }, 529);
+  assert.equal((await call(identify(), failing, { allowances })).status, 503);
+  assert.equal((await allowances.status({ installKey: KEY })).free, 1);
+  const noTool = upstream({ content: [{ type: "text", text: "sorry" }] });
+  assert.equal((await call(identify(), noTool, { allowances })).status, 502);
+  assert.equal((await allowances.status({ installKey: KEY })).free, 1);
+});
+
+test("a bad request or a rate-limited one does not touch the allowance either", async () => {
+  const allowances = paywall({ freeAnalyses: 1 });
+  assert.equal((await call({ task: "identify", photos: [] }, ok, { allowances })).status, 400);
+  const tight = createBudget(memoryStore(), { installPerDay: 0 });
+  assert.equal((await call(identify(), ok, { allowances, budget: tight })).status, 429);
+  assert.equal((await allowances.status({ installKey: KEY })).free, 1);
+});
+
+test("the cheap text lookup is not metered", async () => {
+  const allowances = paywall({ freeAnalyses: 0 });
+  const result = await call({ task: "facts", description: "Title: DEWALT DCF887B" }, upstream(answer(FACTS_TOOL, { brand: "DEWALT" })), { allowances });
+  assert.equal(result.status, 200); assert.equal(result.body.allowance, undefined);
+});
+
+test("with no paywall (switched off), identifications stay free and the answer has no allowance", async () => {
+  const result = await call(identify(), ok);
+  assert.equal(result.status, 200); assert.equal(result.body.allowance, undefined);
+});
+
+test("if the allowance cannot be read, nobody spends money", async () => {
+  const broken = createAllowances({ get: async () => { throw new Error("down"); }, set: async () => {} });
+  const result = await call(identify(), ok, { allowances: broken });
+  assert.equal(result.status, 503); assert.equal(upstream.calls.length, 0);
+});
+
+test("if the allowance cannot be written after a good answer, the seller still gets the answer", async () => {
+  const flaky = createAllowances({ get: async () => null, set: async () => { throw new Error("down"); } }, { freeAnalyses: 1 });
+  const result = await call(identify(), ok, { allowances: flaky });
+  assert.equal(result.status, 200); assert.equal(result.body.content[0].name, IDENTIFY_TOOL);
+});
+
+test("an exhausted subscriber is told when the month renews", async () => {
+  const day = 86_400_000, now = Date.UTC(2026, 10, 2);
+  const sign = (fields) => `fake.${Buffer.from(JSON.stringify(fields)).toString("base64url")}.sig`;
+  const verify = (text) => JSON.parse(Buffer.from(text.split(".")[1], "base64url").toString());
+  const entitlement = sign({ bundleId: "com.tidewrightstudios.sellpilot", environment: "Production", productId: "com.tidewrightstudios.sellpilot.plus.monthly", originalTransactionId: "o1", transactionId: "t1", originalPurchaseDate: now - day, expiresDate: now + 20 * day });
+  const allowances = createAllowances(memoryStore(), { freeAnalyses: 0, plusPerPeriod: 1, verify, now: () => now });
+  assert.equal((await call(identify(), ok, { allowances, entitlement })).body.allowance.plus.remaining, 0);
+  const result = await call(identify(), ok, { allowances, entitlement });
+  assert.equal(result.status, 402); assert.match(result.body.message, /renew 2026-12-01/);
+});

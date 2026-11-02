@@ -81,7 +81,8 @@ final class AccessibilityUITests: XCTestCase {
     /// Findings the audit reports that are not problems with this app: iOS's own navigation-bar buttons (which cap their own
     /// text size), the reflowing Home tiles, and contrast or clipping reported for content scrolled underneath the translucent tab or button bars.
     private func isKnownNoise(_ issue: XCUIAccessibilityAuditIssue, in app: XCUIApplication, screen: String) -> Bool {
-        guard let element = issue.element else { return issue.auditType == .contrast }
+        // A Dynamic Type finding with no element on a Settings screen is the same unreliable comparison described below.
+        guard let element = issue.element else { return issue.auditType == .contrast || (issue.auditType == .dynamicType && screen.hasPrefix("Settings")) }
         // Disabled controls are exempt from contrast requirements (WCAG 1.4.3), and iOS dims them on purpose.
         if !element.isEnabled, issue.auditType == .contrast { return true }
         // The Home tiles reflow from two columns to one at accessibility sizes. The audit reads that as text that does not scale,

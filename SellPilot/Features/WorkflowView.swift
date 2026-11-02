@@ -56,6 +56,10 @@ struct WorkflowView: View {
                 if workflow.reconnectNeeded { Button("Open Settings") { workflow.error = nil; workflow.reconnectNeeded = false; showSettings = true } }
                 Button(workflow.reconnectNeeded ? "Not now" : "OK", role: .cancel) { workflow.error = nil; workflow.reconnectNeeded = false }
             } message: { Text(workflow.error ?? "") }
+            .sheet(isPresented: Binding(get: { workflow.paywallReason != nil }, set: { if !$0 { workflow.paywallReason = nil } }), onDismiss: {
+                // If the seller bought something, carry on with the analysis they were trying to run.
+                if workflow.item.workflowStep == 0, !workflow.item.photos.isEmpty, (PurchaseStore.shared.allowance?.available ?? 0) > 0 { Task { await workflow.advance() } }
+            }) { PaywallView(reason: workflow.paywallReason) }
             .sheet(isPresented: $showSettings, onDismiss: { workflow.reloadServices() }) { SettingsView(store: workflow.store) }
             .alert("SellPilot", isPresented: Binding(get: { workflow.notice != nil }, set: { if !$0 { workflow.notice = nil } })) { Button("OK") { workflow.notice = nil } } message: { Text(workflow.notice ?? "") }
             .confirmationDialog("Confirm you published this item on your chosen marketplaces.", isPresented: $confirmActive, titleVisibility: .visible) { Button("Confirm published") { do { try workflow.activate(); dismiss() } catch { workflow.error = error.localizedDescription } } }

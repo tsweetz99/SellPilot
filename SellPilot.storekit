@@ -1,0 +1,97 @@
+{
+  "identifier" : "A1B2C3D4",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "2.99",
+      "familyShareable" : false,
+      "internalID" : "6F1A0C52-0001-4000-8000-000000000003",
+      "localizations" : [
+        {
+          "description" : "25 photo analyses. One payment, and they never expire.",
+          "displayName" : "25 analyses",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.tidewrightstudios.sellpilot.analyses.25",
+      "referenceName" : "25 analyses",
+      "type" : "Consumable"
+    }
+  ],
+  "settings" : {
+
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "21500001",
+      "localizations" : [
+
+      ],
+      "name" : "SellPilot Plus",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "34.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "6F1A0C52-0001-4000-8000-000000000002",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "60 photo analyses every month, billed once a year.",
+              "displayName" : "SellPilot Plus Yearly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.tidewrightstudios.sellpilot.plus.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Plus Yearly",
+          "subscriptionGroupID" : "21500001",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "4.99",
+          "familyShareable" : false,
+          "groupNumber" : 2,
+          "internalID" : "6F1A0C52-0001-4000-8000-000000000001",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "60 photo analyses every month.",
+              "displayName" : "SellPilot Plus Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.tidewrightstudios.sellpilot.plus.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Plus Monthly",
+          "subscriptionGroupID" : "21500001",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}
