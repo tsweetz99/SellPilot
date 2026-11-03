@@ -47,8 +47,8 @@ struct SettingsView: View {
             if let backupURL { ShareLink("Save backup file", item: backupURL) }
             Button(restoring ? "Restoring…" : "Restore from a backup file") { showRestorePicker = true }.disabled(backingUp || restoring)
             if let backupMessage { Text(backupMessage).font(.caption).foregroundStyle(PilotTheme.muted) }
-        } header: { Text("Backup") } footer: {
-            Text("\(BackupService.lastBackup.map { "Last backup: \($0.formatted(date: .abbreviated, time: .shortened))." } ?? "You haven't backed up yet.") A backup holds your items, drafts and photos, not your API keys or eBay sign-in. Deleting the app deletes its data, so back up first. Restoring never replaces an item with an older copy.")
+        } header: { Text("Backup").foregroundStyle(PilotTheme.muted) } footer: {
+            Text("\(BackupService.lastBackup.map { "Last backup: \($0.formatted(date: .abbreviated, time: .shortened))." } ?? "You haven't backed up yet.") A backup holds your items, drafts and photos, not your API keys or eBay sign-in. Deleting the app deletes its data, so back up first. Restoring never replaces an item with an older copy.").foregroundStyle(PilotTheme.muted)
         }
     }
 
@@ -60,8 +60,8 @@ struct SettingsView: View {
             if purchases.hasPlus { Button("Manage subscription") { showManage = true } }
             Button("Restore purchases") { Task { await purchases.restore() } }.disabled(purchases.busy)
             if let note = purchases.message { Text(note).font(.footnote).foregroundStyle(PilotTheme.muted) }
-        } header: { Text("SellPilot Plus") } footer: {
-            Text("Your first \(PlusProduct.freeAnalyses) photo analyses are free. After that, Plus gives \(PlusProduct.plusPerPeriod) analyses a month, or you can buy a pack of \(PlusProduct.packSize). Entering details yourself is always free.")
+        } header: { Text("SellPilot Plus").foregroundStyle(PilotTheme.muted) } footer: {
+            Text("Your first \(PlusProduct.freeAnalyses) photo analyses are free. After that, Plus gives \(PlusProduct.plusPerPeriod) analyses a month, or you can buy a pack of \(PlusProduct.packSize). Entering details yourself is always free.").foregroundStyle(PilotTheme.muted)
         }
     }
 
@@ -88,7 +88,7 @@ struct SettingsView: View {
             Form {
                 if let store { backupSection(store) }
                 if purchases.paywallOn && !hasKey { plusSection }
-                Section { Link("Privacy policy", destination: PrivacyPolicy.url) } footer: { Text("What SellPilot keeps on your phone and what it sends to other services.") }
+                Section { Link("Privacy policy", destination: PrivacyPolicy.url) } footer: { Text("What SellPilot keeps on your phone and what it sends to other services.").foregroundStyle(PilotTheme.muted) }
                 Section {
                     Toggle("Allow AI identification", isOn: $aiAllowed).onChange(of: aiAllowed) { _, allowed in AIConsent.given = allowed }
                     if developer { SecureField("Anthropic API key (optional)", text: $key).textInputAutocapitalization(.never).autocorrectionDisabled() }
@@ -97,8 +97,8 @@ struct SettingsView: View {
                         catch { message = error.localizedDescription }
                     }.disabled(key.trimmingCharacters(in: .whitespaces).isEmpty) }
                     if developer, hasKey { Button("Remove key", role: .destructive) { APIKeyStore.delete(); hasKey = APIKeyStore.load() != nil; message = "Removed. SellPilot's built-in AI service is used again." } }
-                } header: { Text("AI identification") } footer: {
-                    Text(hasKey ? "AI identification uses your own key. Photos you analyze are sent to Anthropic's Claude service. The key stays in this device's Keychain." : "AI identification is built in. Photos you analyze are sent to SellPilot's AI service, which uses Anthropic's Claude, and are not stored. Turn this off to enter details yourself.")
+                } header: { Text("AI identification").foregroundStyle(PilotTheme.muted) } footer: {
+                    Text(hasKey ? "AI identification uses your own key. Photos you analyze are sent to Anthropic's Claude service. The key stays in this device's Keychain." : "AI identification is built in. Photos you analyze are sent to SellPilot's AI service, which uses Anthropic's Claude, and are not stored. Turn this off to enter details yourself.").foregroundStyle(PilotTheme.muted)
                 }
                 if developer {
                 Section {
@@ -114,8 +114,8 @@ struct SettingsView: View {
                         } catch { message = error.localizedDescription }
                     }.disabled(ebayApp.trimmingCharacters(in: .whitespaces).isEmpty && ebayCert.trimmingCharacters(in: .whitespaces).isEmpty)
                     if hasEbay { Button("Remove eBay keys", role: .destructive) { APIKeyStore.delete(.ebayAppID); APIKeyStore.delete(.ebayCertID); hasEbay = EbayCredentials.load() != nil; message = "Removed. Pricing uses demo data." } }
-                } header: { Text("eBay market data") } footer: {
-                    Text(hasEbay ? "Pricing uses similar active eBay listings. These are asking prices, not sold prices." : "No keys set: pricing uses demo data. Use your eBay Production App ID and Cert ID.")
+                } header: { Text("eBay market data").foregroundStyle(PilotTheme.muted) } footer: {
+                    Text(hasEbay ? "Pricing uses similar active eBay listings. These are asking prices, not sold prices." : "No keys set: pricing uses demo data. Use your eBay Production App ID and Cert ID.").foregroundStyle(PilotTheme.muted)
                 }
                 Section {
                     SecureField("Sandbox App ID", text: $sbxApp).textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -132,8 +132,8 @@ struct SettingsView: View {
                         } catch { message = error.localizedDescription }
                     }.disabled(sbxApp.isEmpty && sbxCert.isEmpty && sbxToken.isEmpty)
                     if hasSandbox { Button("Remove sandbox details", role: .destructive) { [APIKeyStore.Account.ebaySandboxAppID, .ebaySandboxCertID, .ebaySandboxUserToken].forEach { APIKeyStore.delete($0) }; hasSandbox = APIKeyStore.load(.ebaySandboxUserToken) != nil; message = "Removed." } }
-                } header: { Text("eBay Sandbox (testing)") } footer: {
-                    Text("For test listings only. Nothing is posted to real eBay. The user token expires after about two hours; paste a fresh one from the eBay developer portal when it does.")
+                } header: { Text("eBay Sandbox (testing)").foregroundStyle(PilotTheme.muted) } footer: {
+                    Text("For test listings only. Nothing is posted to real eBay. The user token expires after about two hours; paste a fresh one from the eBay developer portal when it does.").foregroundStyle(PilotTheme.muted)
                 }
                 Section {
                     SecureField("eBay redirect name (RuName)", text: $sbxRuName).textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -147,8 +147,8 @@ struct SettingsView: View {
                         } catch { message = error.localizedDescription }
                     }.disabled(sbxRuName.isEmpty && proxyURL.isEmpty)
                     if let connection { EbayConnectRow(connection: connection) }
-                } header: { Text("eBay Sandbox sign-in") } footer: {
-                    Text("Sign in with a sandbox test seller instead of pasting a token. SellPilot never sees your eBay password. With a token server, eBay sign-in and app tokens go through it and the Cert ID is not needed on this device. Without one, the Cert ID is used directly from this device, which is fine for testing only.")
+                } header: { Text("eBay Sandbox sign-in").foregroundStyle(PilotTheme.muted) } footer: {
+                    Text("Sign in with a sandbox test seller instead of pasting a token. SellPilot never sees your eBay password. With a token server, eBay sign-in and app tokens go through it and the Cert ID is not needed on this device. Without one, the Cert ID is used directly from this device, which is fine for testing only.").foregroundStyle(PilotTheme.muted)
                 }
                 }
                 if developer {
@@ -166,8 +166,8 @@ struct SettingsView: View {
                     if let liveConnection { EbayConnectRow(connection: liveConnection) }
                     Toggle("Publish to real eBay", isOn: Binding(get: { liveOn }, set: { liveOn = $0; LiveSettings.enabled = $0 }))
                         .disabled(!liveOn && !(LiveSettings.isValidZip(LiveSettings.shipFromZip) && liveConnection?.status == .connected))
-                } header: { Text("Real eBay (live listings)") } footer: {
-                    Text("Off by default. When on, listings you publish go to REAL eBay, where real buyers can purchase them and eBay may charge fees. It needs your Production App ID (in eBay market data above), a Production sign-in, and the ZIP code you ship from. Turn it off to go back to the sandbox.")
+                } header: { Text("Real eBay (live listings)").foregroundStyle(PilotTheme.muted) } footer: {
+                    Text("Off by default. When on, listings you publish go to REAL eBay, where real buyers can purchase them and eBay may charge fees. It needs your Production App ID (in eBay market data above), a Production sign-in, and the ZIP code you ship from. Turn it off to go back to the sandbox.").foregroundStyle(PilotTheme.muted)
                 }
                 } else {
                 Section {
@@ -180,8 +180,8 @@ struct SettingsView: View {
                         .onChange(of: zip) { _, new in if new.isEmpty || LiveSettings.isValidZip(new) { LiveSettings.shipFromZip = new } }
                     Toggle("Publish to eBay", isOn: Binding(get: { liveOn }, set: { liveOn = $0; LiveSettings.enabled = $0 }))
                         .disabled(!liveOn && !(LiveSettings.isValidZip(zip) && liveConnection?.status == .connected))
-                } header: { Text("eBay") } footer: {
-                    Text("Off by default. To publish from SellPilot, connect your eBay seller account, enter the 5-digit ZIP code you ship from, then turn this on. Listings you publish are real: buyers can purchase them and eBay may charge fees. SellPilot never sees your eBay password.")
+                } header: { Text("eBay").foregroundStyle(PilotTheme.muted) } footer: {
+                    Text("Off by default. To publish from SellPilot, connect your eBay seller account, enter the 5-digit ZIP code you ship from, then turn this on. Listings you publish are real: buyers can purchase them and eBay may charge fees. SellPilot never sees your eBay password.").foregroundStyle(PilotTheme.muted)
                 }
                 }
                 if let message { Section { Text(message).font(.footnote) } }
