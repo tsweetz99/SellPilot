@@ -63,9 +63,6 @@ struct SettingsView: View {
         } header: { Text("SellPilot Plus") } footer: {
             Text("Your first \(PlusProduct.freeAnalyses) photo analyses are free. After that, Plus gives \(PlusProduct.plusPerPeriod) analyses a month, or you can buy a pack of \(PlusProduct.packSize). Entering details yourself is always free.")
         }
-        .sheet(isPresented: $showPlans) { PaywallView() }
-        .manageSubscriptionsSheet(isPresented: $showManage)
-        .task { await purchases.refreshAllowance() }
     }
 
     /// Learns eBay's current sign-in setup from the server (so nobody types it in), then builds the connection.
@@ -190,6 +187,11 @@ struct SettingsView: View {
                 if let message { Section { Text(message).font(.footnote) } }
             }
             .task { await loadEbay() }
+            .task { await purchases.refreshAllowance() }
+            // These live on the Form, not on the Plus section: a sheet attached to a row of a list closes by itself when the list
+            // refreshes, which it does a moment after opening, when the prices and the allowance arrive.
+            .sheet(isPresented: $showPlans) { PaywallView() }
+            .manageSubscriptionsSheet(isPresented: $showManage)
             .fileImporter(isPresented: $showRestorePicker, allowedContentTypes: [.data], onCompletion: handleRestore)
             .navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() } } }

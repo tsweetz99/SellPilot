@@ -46,6 +46,19 @@ final class SellPilotUITests: XCTestCase {
         tap("Generate my listings", in: app)
         XCTAssertTrue(app.navigationBars["Ready"].waitForExistence(timeout: 10))
     }
+    /// Regression: the plans sheet opened from Settings used to close by itself a second or two later, when the prices and the
+    /// seller's allowance finished loading. This runs the app with purchases live (not `--ui-testing`), so those loads happen.
+    func testThePlansSheetOpenedFromSettingsStaysOpen() {
+        let app = XCUIApplication(); app.launchArguments = ["--public-mode"]; app.launch()
+        XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 10)); app.buttons["Settings"].tap()
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 10))
+        let plans = app.buttons["seePlans"]
+        for _ in 0..<6 where !(plans.exists && plans.isHittable) { app.swipeUp() }
+        XCTAssertTrue(plans.waitForExistence(timeout: 5), "the See plans button is in Settings"); plans.tap()
+        XCTAssertTrue(app.navigationBars["Plans"].waitForExistence(timeout: 5), "the plans sheet opens")
+        RunLoop.current.run(until: Date().addingTimeInterval(8))
+        XCTAssertTrue(app.navigationBars["Plans"].exists, "the plans sheet is still open after the prices and allowance have loaded")
+    }
     /// The public app shows simple eBay settings; the developer fields (keys, sandbox, redirect name) are not there.
     func testPublicSettingsHideTheDeveloperFields() {
         let app = XCUIApplication(); app.launchArguments = ["--ui-testing", "--public-mode"]; app.launchEnvironment["SELLPILOT_TEST_STORE"] = UUID().uuidString; app.launch()
