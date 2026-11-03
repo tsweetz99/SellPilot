@@ -17,11 +17,13 @@ enum ClaudeAPI {
     private static let retryableStatuses: Set<Int> = [429, 500, 502, 503, 504, 529]
 
     /// `retryable` and `errorMessage` let the hosted service retry only what is safe to repeat and show its own wording.
+    /// `signer` adds proof of a genuine app to every attempt, a retry included: a signed request cannot be sent twice.
     /// `failure` lets it turn a refusal into its own error type (an out-of-analyses answer is not a failure the seller should see as one).
-    static func send(_ request: URLRequest, session: URLSession, retryDelay: Duration, retryable: Set<Int> = retryableStatuses, errorMessage: ((Int, Data) -> String?)? = nil, failure: ((Int, Data) -> Error?)? = nil) async throws -> Data {
+    static func send(_ request: URLRequest, session: URLSession, retryDelay: Duration, retryable: Set<Int> = retryableStatuses, errorMessage: ((Int, Data) -> String?)? = nil, failure: ((Int, Data) -> Error?)? = nil, signer: RequestSigner? = nil) async throws -> Data {
         for attempt in 0...1 {
             let data: Data, response: URLResponse
-            do { (data, response) = try await session.data(for: request) }
+            let outgoing = await signer?.sign(request) ?? request
+            do { (data, response) = try await session.data(for: outgoing) }
             catch let error as URLError {
                 if attempt == 0, [.timedOut, .networkConnectionLost].contains(error.code) { try await Task.sleep(for: retryDelay); continue }
                 throw ServiceError.invalid(message(for: error))

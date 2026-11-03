@@ -73,6 +73,7 @@ struct AllowanceClient {
     var endpoint = HostedAI.accountEndpoint()
     var installKey: () -> String = { APIKeyStore.installKey() }
     var entitlement: () -> String? = { EntitlementCache.jws }
+    var signer: RequestSigner? = AppAttestSigner.shared
     var session: URLSession = .shared
 
     func makeRequest(redeeming transaction: String? = nil) throws -> URLRequest {
@@ -105,7 +106,8 @@ struct AllowanceClient {
 
     private func send(_ request: URLRequest) async throws -> Data {
         let data: Data, response: URLResponse
-        do { (data, response) = try await session.data(for: request) }
+        let outgoing = request.httpMethod == "POST" ? (await signer?.sign(request) ?? request) : request   // adding credits is the request that needs proof
+        do { (data, response) = try await session.data(for: outgoing) }
         catch { throw ServiceError.invalid("Couldn't reach SellPilot's service. Check your connection; your purchase is safe and will be added when it is back.") }
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0

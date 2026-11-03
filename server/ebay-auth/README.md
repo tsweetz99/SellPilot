@@ -138,7 +138,31 @@ anything is sent to Claude or counted against the spending allowances above. A f
 
 The products and their numbers are in `lib/products.mjs`; a test in the app's suite fails if the app's copy drifts from it.
 
-**Not in this version:** proof that a request comes from a genuine SellPilot (Apple App Attest). The install code and the address
-and global allowances limit the damage a script can do, but they do not stop one. With the paywall this also means a script can
-claim the free allowance again by inventing install codes; the address and whole-service allowances bound that. Add App Attest
-before the app is widely used or if the service-wide cap is ever hit by traffic that is not real.
+**App Attest (proof of a genuine app on a real device)**
+
+The app registers a hardware-backed key once (Apple vouches for the key and the app), then signs every AI request and every pack
+redemption with it. The server checks Apple's certificate chain (pinned Apple App Attestation Root CA), that the key belongs to
+`2XC3GTJ8B8.com.tidewrightstudios.sellpilot`, and on each request the signature over the exact request body and a counter that must go up
+(so a captured request cannot be replayed). Each key is tied to one install code. Code: `lib/attest.mjs`, `lib/attestGate.mjs`,
+`netlify/functions/attest.mjs` (`GET /api/attest` gives a one-time challenge, `POST /api/attest` registers a key).
+
+It is **off until you turn it on, and soft before you require it**, because apps released before App Attest cannot send proof:
+
+| Variable | Meaning |
+|---|---|
+| `AI_ATTEST` | `on` switches checking on. Anything else leaves it off (requests are not checked or logged as attested). |
+| `AI_REQUIRE_ATTEST` | `true` refuses requests without valid proof (`401 attest_required` / `attest_invalid`). Leave it unset while older app versions are in use. |
+| `AI_ATTEST_ALLOW_DEVELOPMENT` | `true` also accepts keys from development builds run from Xcode (for testing only). |
+
+Rollout: (1) deploy with the variables unset, nothing changes; (2) release an app version that includes App Attest; (3) set `AI_ATTEST=on`
+and watch the logs: each AI call logs `"attest":"valid"`, `"missing"` (older app, or no App Attest) or `"invalid"`; (4) when almost
+every call is `valid`, set `AI_REQUIRE_ATTEST=true`. Older apps then get a clear "update SellPilot" message. If valid proof ever
+looks wrong in the logs (`ai_attest_refused` with a reason), set `AI_REQUIRE_ATTEST` back to off at once: the checks follow Apple's
+documented steps but have been tested only against a self-made test vector until a real device has registered.
+
+Not covered: one real device can still register several keys (Apple's fraud-risk receipt, which counts keys per device, is not
+used yet), and the simulator and very old devices have no App Attest, so they send no proof.
+
+**Until App Attest is required:** the install code and the address and whole-service allowances limit the damage a script can do, but
+they do not stop one. With the paywall that means a script can claim the free allowance again by inventing install codes; the
+address and whole-service allowances bound that. Requiring App Attest (above) closes it for anyone without a real device.
