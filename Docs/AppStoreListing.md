@@ -198,6 +198,6 @@ The files are `01-photograph` to `06-settings` (the set above) plus `00-home`. P
 2. **Screenshots** (6.9-inch, 1320 x 2868): see the plan above. They need real item photos.
 3. **Archive and upload** a Release build from Xcode (Product, Archive), then add it to TestFlight.
 4. **TestFlight** on two or three other phones: the AI consent prompt, eBay connect with someone else's account, backup and restore.
-5. **App Attest** (proof a request comes from a genuine SellPilot) before the AI service has real traffic; until then the limits cap the damage.
+5. **App Attest** is built (app and server) but not released: see "App Attest" in `server/ebay-auth/README.md` for the rollout. It needs an app update after 1.0 (the build in review does not send proof), then `AI_ATTEST=on`, then `AI_REQUIRE_ATTEST=true`.
 6. **Review the privacy policy** with someone qualified, and review eBay's API license terms before public release.
 7. **Apple Developer account.** The studio site says the enrollment is under Sweetz Holdings LLC. Confirm it is active and, for a free app, that no paid-apps agreement is required.

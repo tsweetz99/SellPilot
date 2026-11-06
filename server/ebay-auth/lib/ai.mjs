@@ -77,10 +77,11 @@ function upstreamBody(request, env) {
  *          installKey?: string|null, address?: string|null,
  *          budget?: {spend(args: {installKey: string, addressHash: string, units: number}): Promise<{allowed: boolean, retryAfterSeconds: number, scope?: string}>},
  *          allowances?: ReturnType<typeof import("./allowances.mjs").createAllowances>, entitlement?: string|null,
+ *          attestCheck?: (args: {installKey: string}) => Promise<{ok: boolean, state: string, reason?: string, response?: {status: number, body: object}}>,
  *          log?: (line: string) => void}} request
  * `allowances` is the paywall: without it every identification is free (tests, or the studio switching the paywall off).
  */
-export async function handleAI({ method, body, env, fetchImpl = fetch, installKey = null, address = null, budget = null, allowances = null, entitlement = null, log = () => {} }) {
+export async function handleAI({ method, body, env, fetchImpl = fetch, installKey = null, address = null, budget = null, allowances = null, entitlement = null, attestCheck = null, log = () => {} }) {
   if (method !== "POST") return fail(405, "method_not_allowed", "Use POST.");
   // Off unless the studio switches it on: this is the spending switch.
   if (env.AI_ENABLED !== "true") return fail(503, "ai_unavailable", PAUSED);
@@ -88,6 +89,14 @@ export async function handleAI({ method, body, env, fetchImpl = fetch, installKe
   if (typeof installKey !== "string" || !INSTALL_KEY.test(installKey)) return fail(401, "install_key_required", "This copy of SellPilot could not be verified. Update the app and try again.");
   const key = installKey.toLowerCase();
   if ((env.AI_BLOCKED_INSTALL_KEYS ?? "").split(",").map((k) => k.trim().toLowerCase()).includes(key)) return fail(403, "forbidden", "This copy of SellPilot can't use the AI service.");
+
+  // Device proof (App Attest), when it is switched on. Without it a request is let through and only counted, until the studio requires it.
+  let attestState = "off";
+  if (attestCheck) {
+    const verdict = await attestCheck({ installKey: key });
+    attestState = verdict.state;
+    if (!verdict.ok) { log(JSON.stringify({ event: "ai_attest_refused", state: verdict.state, reason: verdict.reason })); return reply(verdict.response.status, verdict.response.body); }
+  }
 
   const request = validate(body);
   if (request.failure) return request.failure;
@@ -151,6 +160,6 @@ export async function handleAI({ method, body, env, fetchImpl = fetch, installKe
 
   const result = await outcome();
   // Counts only: never the photos, the description or the answer.
-  log(JSON.stringify({ event: "ai", task: request.task, status: result.status, photos: request.photos?.length, ms: Date.now() - started }));
+  log(JSON.stringify({ event: "ai", task: request.task, status: result.status, photos: request.photos?.length, attest: attestState, ms: Date.now() - started }));
   return result;
 }

@@ -2,11 +2,14 @@
 const INSTALL_KEY = /^[0-9a-f]{32,64}$/i;
 const reply = (status, body) => ({ status, body });
 
-/** @param {{method: string, body: unknown, installKey?: string|null, entitlement?: string|null, allowances: ReturnType<typeof import("./allowances.mjs").createAllowances>, paywallOn?: boolean}} request */
-export async function handleAccount({ method, body, installKey = null, entitlement = null, allowances, paywallOn = true }) {
+/** @param {{method: string, body: unknown, installKey?: string|null, entitlement?: string|null, allowances: ReturnType<typeof import("./allowances.mjs").createAllowances>, paywallOn?: boolean,
+ *          attestCheck?: (args: {installKey: string}) => Promise<{ok: boolean, response?: {status: number, body: object}}>}} request */
+export async function handleAccount({ method, body, installKey = null, entitlement = null, allowances, paywallOn = true, attestCheck = null }) {
   if (method !== "GET" && method !== "POST") return reply(405, { error: "method_not_allowed", message: "Use GET or POST." });
   if (typeof installKey !== "string" || !INSTALL_KEY.test(installKey)) return reply(401, { error: "install_key_required", message: "This copy of SellPilot could not be verified. Update the app and try again." });
   const key = installKey.toLowerCase();
+  // Adding credits is the one request here that changes something, so it needs device proof when that is required.
+  if (method === "POST" && attestCheck) { const verdict = await attestCheck({ installKey: key }); if (!verdict.ok) return reply(verdict.response.status, verdict.response.body); }
   try {
     if (method === "GET") return reply(200, { paywall: paywallOn, allowance: await allowances.status({ installKey: key, entitlement }) });
     const transaction = body && typeof body === "object" ? body.transaction : null;

@@ -16,6 +16,8 @@ enum HostedAI {
 
     /// Where the app asks what it has left and redeems a bought pack.
     static func accountEndpoint() -> URL { endpoint().appendingPathComponent("account") }
+    /// Where the app registers its App Attest key (a sibling of the AI endpoint: .../api/attest).
+    static func attestEndpoint() -> URL { endpoint().deletingLastPathComponent().appendingPathComponent("attest") }
 
     static let disclosure = "To identify your item, the photos you analyze are sent to SellPilot's AI service, which uses Anthropic's Claude. They are not stored."
     static let providerName = "SellPilot AI"
@@ -30,6 +32,11 @@ if status == 401 { return "This copy of SellPilot could not be verified. Update 
 
     /// Out of analyses (402) is a prompt to choose a plan, not an error to show in an alert.
     static func failure(status: Int, body: Data) -> Error? {
+        // The server did not accept the proof that this is a genuine copy: forget the device key so the next try registers a fresh one.
+        if status == 401, let code = ((try? JSONSerialization.jsonObject(with: body)) as? [String: Any])?["error"] as? String, code.hasPrefix("attest_") {
+            Task { await AppAttestSigner.shared.reset() }
+            return nil   // the server's own message is then shown
+        }
         guard status == 402 else { return nil }
         let message = ((try? JSONSerialization.jsonObject(with: body)) as? [String: Any])?["message"] as? String
         return HostedAIError(message: message ?? "You've used your free analyses. Choose a plan or a pack to keep going.", allowance: AIAllowance.parse(body))
@@ -63,6 +70,7 @@ struct HostedIdentificationService: ProductIdentificationService {
     struct Configuration {
         var endpoint = HostedAI.endpoint()
         var installKey: () -> String = { APIKeyStore.installKey() }
+        var signer: RequestSigner? = AppAttestSigner.shared
         var maxPhotos = 6
         var maxImagePixels = 1280
         var timeout: TimeInterval = 75
@@ -89,7 +97,7 @@ struct HostedIdentificationService: ProductIdentificationService {
     func identify(photos: [SellItemPhoto]) async throws -> ProductIdentification {
         guard !photos.isEmpty else { throw ServiceError.invalid("Add at least one photo.") }
         let data: Data
-        do { data = try await ClaudeAPI.send(try makeRequest(photos: photos), session: session, retryDelay: configuration.retryDelay, retryable: HostedAI.retryable, errorMessage: HostedAI.errorMessage, failure: HostedAI.failure) }
+        do { data = try await ClaudeAPI.send(try makeRequest(photos: photos), session: session, retryDelay: configuration.retryDelay, retryable: HostedAI.retryable, errorMessage: HostedAI.errorMessage, failure: HostedAI.failure, signer: configuration.signer) }
         catch let error as HostedAIError { if let allowance = error.allowance { await MainActor.run { PurchaseStore.shared.record(allowance) } }; throw error }
         if let allowance = AIAllowance.parse(data) { await MainActor.run { PurchaseStore.shared.record(allowance) } }
         return try ClaudeIdentificationService.parse(data, photoCount: min(photos.count, configuration.maxPhotos), provider: HostedAI.providerName)
@@ -100,6 +108,7 @@ struct HostedItemFactsService: ItemSpecificsService {
     struct Configuration {
         var endpoint = HostedAI.endpoint()
         var installKey: () -> String = { APIKeyStore.installKey() }
+        var signer: RequestSigner? = AppAttestSigner.shared
         var timeout: TimeInterval = 45
         var retryDelay: Duration = .seconds(2)
     }
@@ -112,7 +121,7 @@ struct HostedItemFactsService: ItemSpecificsService {
     }
 
     func facts(for item: SellItem) async throws -> [String: String] {
-        let data = try await ClaudeAPI.send(try makeRequest(item: item), session: session, retryDelay: configuration.retryDelay, retryable: HostedAI.retryable, errorMessage: HostedAI.errorMessage)
+        let data = try await ClaudeAPI.send(try makeRequest(item: item), session: session, retryDelay: configuration.retryDelay, retryable: HostedAI.retryable, errorMessage: HostedAI.errorMessage, signer: configuration.signer)
         return try ClaudeItemFactsService.parseFacts(data)
     }
 }
