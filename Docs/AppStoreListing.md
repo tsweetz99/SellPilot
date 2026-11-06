@@ -2,7 +2,7 @@
 
 Copy for App Store Connect. Each field shows its limit; `python3 scripts/check_app_store_listing.py` checks them.
 It describes the app as it is today: the studio-hosted AI service is live, publishing to eBay is built in and off by default,
-the bundle identifier is `com.tidewrightstudios.sellpilot`, and the version is 1.0 (build 4; builds 2 and later have the paywall). Re-read it against the app
+the bundle identifier is `com.tidewrightstudios.sellpilot`, and the released version is 1.0 (build 4); the next update, 1.0.1 (build 5), adds App Attest. Re-read it against the app
 before pasting if anything changes.
 
 ## Fields
@@ -182,7 +182,7 @@ The files are `01-photograph` to `06-settings` (the set above) plus `00-home`. P
 - iPhone only for 1.0 (no iPad screenshots needed; iPad would need layout testing first).
 - The App Store Connect record exists (SellPilot: Photo to Listing, bundle `com.tidewrightstudios.sellpilot`).
 - Hosted AI service live, with spending limits and an off switch; consent prompt and Settings switch in the app.
-- Real bundle identifier (`com.tidewrightstudios.sellpilot`), version 1.0, build 4.
+- Real bundle identifier (`com.tidewrightstudios.sellpilot`), version 1.0 (build 4); 1.0.1 (build 5) is the update with App Attest.
 - App icon, privacy manifest, export-compliance setting (HTTPS only), usage descriptions.
 - eBay setup built in; publishing off by default; developer fields only in debug builds.
 - Backup and restore; accessibility audits (default size, largest size, dark mode).
