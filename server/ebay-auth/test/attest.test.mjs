@@ -187,6 +187,16 @@ test("the AI service: with proof required, an unproven request is refused before
   assert.equal(proven.status, 200);
 });
 
+test("a rejected registration and an invalid request log their reason, and nothing else", async () => {
+  const s = service(); const lines = [];
+  const rejected = await handleAttest({ method: "POST", body: { keyId: vector.keyId, attestation: attestationFor(), challenge: "unknown" }, installKey: INSTALL, attest: s.attest, log: (l) => lines.push(l) });
+  assert.equal(rejected.status, 422);
+  assert.match(lines.at(-1), /"event":"attest_rejected"/); assert.match(lines.at(-1), /challenge is unknown/); assert.doesNotMatch(lines.join(""), new RegExp(vector.keyId));
+  const ai = [];
+  await handleAI({ method: "POST", body: { task: "identify", photos: [{ data: jpeg() }] }, env, fetchImpl: upstream, installKey: KEY, address: "x", budget: createBudget(memoryStore()), attestCheck: async () => ({ ok: true, state: "invalid", reason: "unknown key" }), log: (l) => ai.push(l) });
+  assert.match(ai.at(-1), /"attest":"invalid"/); assert.match(ai.at(-1), /"attest_reason":"unknown key"/);
+});
+
 test("the AI service logs how many requests are proven, never the proof itself", async () => {
   const lines = [];
   await handleAI({ method: "POST", body: { task: "identify", photos: [{ data: jpeg() }] }, env, fetchImpl: upstream, installKey: KEY, address: "x", budget: createBudget(memoryStore()), attestCheck: async () => ({ ok: true, state: "valid" }), log: (l) => lines.push(l) });
