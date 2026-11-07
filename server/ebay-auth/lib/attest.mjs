@@ -107,10 +107,10 @@ export function verifyAssertion({ assertion, clientData, publicKeyPem, storedCou
   if (!Buffer.isBuffer(signature) || !Buffer.isBuffer(authenticatorData)) throw invalid("assertion is incomplete");
   const auth = parseAuthData(authenticatorData);
   if (!auth.rpIdHash.equals(sha256(Buffer.from(appId)))) throw invalid("assertion is for a different app");
-  // The key signs authenticatorData followed by the hash of the request, so the signature covers this exact request.
-  const signed = Buffer.concat([authenticatorData, sha256(Buffer.from(clientData ?? ""))]);
+  // Apple's recipe: nonce = SHA-256(authenticatorData || SHA-256(request)); the key's ECDSA signature (which hashes again) is over that nonce.
+  const nonce = sha256(Buffer.concat([authenticatorData, sha256(Buffer.from(clientData ?? ""))]));
   let good = false;
-  try { good = verify("sha256", signed, createPublicKey(publicKeyPem), signature); } catch { good = false; }
+  try { good = verify("sha256", nonce, createPublicKey(publicKeyPem), signature); } catch { good = false; }
   if (!good) throw invalid("signature does not match");
   if (!(auth.counter > storedCounter)) throw invalid("counter did not increase (replayed request)");
   return auth.counter;

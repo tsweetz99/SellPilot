@@ -42,7 +42,7 @@ const verifyGood = (extra = {}) => verifyAttestation({ attestation: attestationF
 function assertionFor(body, counter, { appId = vector.appId, key = deviceKey, tamper = false } = {}) {
   const auth = Buffer.concat([sha256(Buffer.from(appId)), Buffer.from([0x40]), Buffer.alloc(4)]);
   auth.writeUInt32BE(counter, 33);
-  const signature = sign("sha256", Buffer.concat([auth, sha256(Buffer.from(tamper ? body + "x" : body))]), key);
+  const signature = sign("sha256", sha256(Buffer.concat([auth, sha256(Buffer.from(tamper ? body + "x" : body))])), key);
   return cbor({ signature, authenticatorData: auth }).toString("base64");
 }
 
