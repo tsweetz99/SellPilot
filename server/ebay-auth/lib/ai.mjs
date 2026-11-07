@@ -91,10 +91,10 @@ export async function handleAI({ method, body, env, fetchImpl = fetch, installKe
   if ((env.AI_BLOCKED_INSTALL_KEYS ?? "").split(",").map((k) => k.trim().toLowerCase()).includes(key)) return fail(403, "forbidden", "This copy of SellPilot can't use the AI service.");
 
   // Device proof (App Attest), when it is switched on. Without it a request is let through and only counted, until the studio requires it.
-  let attestState = "off";
+  let attestState = "off", attestReason;
   if (attestCheck) {
     const verdict = await attestCheck({ installKey: key });
-    attestState = verdict.state;
+    attestState = verdict.state; attestReason = verdict.reason;
     if (!verdict.ok) { log(JSON.stringify({ event: "ai_attest_refused", state: verdict.state, reason: verdict.reason })); return reply(verdict.response.status, verdict.response.body); }
   }
 
@@ -160,6 +160,6 @@ export async function handleAI({ method, body, env, fetchImpl = fetch, installKe
 
   const result = await outcome();
   // Counts only: never the photos, the description or the answer.
-  log(JSON.stringify({ event: "ai", task: request.task, status: result.status, photos: request.photos?.length, attest: attestState, ms: Date.now() - started }));
+  log(JSON.stringify({ event: "ai", task: request.task, status: result.status, photos: request.photos?.length, attest: attestState, ...(attestReason ? { attest_reason: attestReason } : {}), ms: Date.now() - started }));
   return result;
 }

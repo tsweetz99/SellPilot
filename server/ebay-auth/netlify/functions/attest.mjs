@@ -16,7 +16,7 @@ export default async (request, context) => {
   let body = null;
   if (request.method === "POST") { try { body = await request.json(); } catch { /* handled as invalid */ } }
   const address = createHash("sha256").update(String(context?.ip ?? request.headers.get("x-nf-client-connection-ip") ?? "unknown")).digest("hex").slice(0, 16);
-  const result = await handleAttest({ method: request.method, body, installKey: request.headers.get("x-sellpilot-install"), attest, limiter, address });
+  const result = await handleAttest({ method: request.method, body, installKey: request.headers.get("x-sellpilot-install"), attest, limiter, address, log: (line) => console.log(line) });
   return new Response(JSON.stringify(result.body), { status: result.status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...(result.retryAfterSeconds ? { "Retry-After": String(result.retryAfterSeconds) } : {}) } });
 };
 
