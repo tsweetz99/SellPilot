@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 // POST /api/attest {"keyId","attestation","challenge"}      registers the key (Apple's attestation) for this install
 // Header: x-sellpilot-install. Off unless AI_ATTEST=on.
 export default async (request, context) => {
-  const store = getStore("ai-attest");
+  const store = getStore({ name: "ai-attest", consistency: "strong" });
   const wrap = { get: (key) => store.get(key, { type: "json" }), set: (key, value) => store.setJSON(key, value) };
   const attest = process.env.AI_ATTEST === "on" ? createAttest(wrap, { allowDevelopment: process.env.AI_ATTEST_ALLOW_DEVELOPMENT === "true" }) : null;
   const limits = getStore("app-token-limits");

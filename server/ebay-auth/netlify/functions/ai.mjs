@@ -28,7 +28,7 @@ export default async (request, context) => {
   const allowances = process.env.AI_PAYWALL === "off" ? null : createAllowances(blobStore("ai-allowances"), allowanceOptions(process.env));
 
   // App Attest: off unless AI_ATTEST=on; with AI_REQUIRE_ATTEST=true a request without valid device proof is refused.
-  const attestStore = getStore("ai-attest");
+  const attestStore = getStore({ name: "ai-attest", consistency: "strong" });
   const attest = process.env.AI_ATTEST === "on" ? createAttest({ get: (key) => attestStore.get(key, { type: "json" }), set: (key, value) => attestStore.setJSON(key, value) }, { allowDevelopment: process.env.AI_ATTEST_ALLOW_DEVELOPMENT === "true" }) : null;
   const attestCheck = ({ installKey }) => attestVerdict(attest, { required: process.env.AI_REQUIRE_ATTEST === "true", installKey, keyId: request.headers.get("x-sellpilot-attest-key"), assertion: request.headers.get("x-sellpilot-assertion"), body: text });
 
@@ -40,7 +40,7 @@ export default async (request, context) => {
   return json(result.status, result.body, result.retryAfterSeconds ? { "Retry-After": String(result.retryAfterSeconds) } : {});
 };
 
-const blobStore = (name) => { const store = getStore(name); return { get: (key) => store.get(key, { type: "json" }), set: (key, value) => store.setJSON(key, value) }; };
+const blobStore = (name) => { const store = getStore({ name, consistency: "strong" }); return { get: (key) => store.get(key, { type: "json" }), set: (key, value) => store.setJSON(key, value) }; };
 const json = (status, payload, extra = {}) => new Response(JSON.stringify(payload), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...extra } });
 
 export const config = { path: "/api/ai" };
